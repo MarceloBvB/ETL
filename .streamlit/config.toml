@@ -1,0 +1,5 @@
+[server]
+# Aumenta el límite de tamaño de archivo subido a 1024 MB (1 GB)
+maxUploadSize = 1024
+# Aumenta el límite del tamaño de mensajes (para descargar/mostrar archivos grandes) a 2048 MB (2 GB)
+maxMessageSize = 2048
