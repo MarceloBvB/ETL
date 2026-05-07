@@ -39,10 +39,6 @@
                     <input id="duplicados" type="checkbox" class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500">
                     <label for="duplicados" class="text-gray-700 font-medium">Eliminar registros duplicados</label>
                 </div>
-                <div class="flex items-center space-x-3">
-                    <input id="incluir_log" type="checkbox" class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500" checked>
-                    <label for="incluir_log" class="text-gray-700 font-medium">Descargar ZIP con archivo de registro (Log de cambios)</label>
-                </div>
             </div>
 
             <!-- Gestión de Columnas (Interactivo) -->
@@ -97,6 +93,10 @@
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
             </button>
+
+            <button id="download-log-button" type="button" class="hidden w-full flex justify-center items-center text-blue-700 bg-blue-100 hover:bg-blue-200 focus:ring-4 focus:ring-blue-300 font-bold rounded-xl text-md px-5 py-2.5 text-center transition-all disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed">
+                Descargar Registro de Cambios (PDF)
+            </button>
         </form>
     </div>
 
@@ -114,8 +114,10 @@
         const previewTableContainer = document.getElementById('preview-table-container');
         const columnManagementSection = document.getElementById('column-management-section');
         const columnList = document.getElementById('column-list');
+        const downloadLogButton = document.getElementById('download-log-button');
         
         let columnState = []; // Almacena el estado de las columnas (conservar, original, nuevo nombre)
+        let lastLogData = null; // Almacena el log de la última operación
 
         function updatePreview() {
             if (fileInput.files.length === 0) return;
@@ -214,10 +216,51 @@
                 fileInfo.classList.remove('hidden');
                 fileInfo.classList.add('flex');
                 updatePreview();
+                // Al seleccionar un nuevo archivo, ocultamos el botón de log anterior
+                downloadLogButton.classList.add('hidden');
+                lastLogData = null;
             }
         });
 
         separadorInput.addEventListener('change', updatePreview);
+
+        downloadLogButton.addEventListener('click', async () => {
+            if (!lastLogData) {
+                alert("No hay ningún registro de cambios para descargar. Primero procesa un archivo.");
+                return;
+            }
+
+            downloadLogButton.disabled = true;
+            downloadLogButton.textContent = 'Generando PDF...';
+
+            try {
+                const response = await fetch('/api/descargar_log_pdf', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ log_lines: lastLogData })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Error al generar el PDF: ${errorText}`);
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'log_de_cambios.pdf';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                alert(`Ocurrió un error al descargar el log: ${error.message}`);
+            } finally {
+                downloadLogButton.disabled = false;
+                downloadLogButton.textContent = 'Descargar Registro de Cambios (PDF)';
+            }
+        });
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -227,8 +270,10 @@
                 return;
             }
 
+            downloadLogButton.classList.add('hidden');
+            lastLogData = null;
+
             const duplicados = document.getElementById('duplicados').checked;
-            const incluirLog = document.getElementById('incluir_log').checked;
             const separador = separadorInput.value;
             const formatoDescarga = document.getElementById('formato_descarga').value;
             const nombreDescargaInput = document.getElementById('nombre_descarga').value.trim();
@@ -265,7 +310,6 @@
                     const formData = new FormData();
                     formData.append('file', file, safeFileName);
                     formData.append('eliminar_duplicados', duplicados);
-                    formData.append('incluir_log', incluirLog);
                     formData.append('separador', separador);
                     formData.append('columnas_eliminar', JSON.stringify(colsAEliminar));
                     formData.append('mapa_nombres', JSON.stringify(mapaNombres));
@@ -285,13 +329,16 @@
                         throw new Error(`Error en el archivo ${file.name}: ${response.statusText}. Detalles: ${errorText}`);
                     }
 
+                    const logHeader = response.headers.get('X-ETL-Log');
+                    if (logHeader) {
+                        lastLogData = JSON.parse(logHeader);
+                        downloadLogButton.classList.remove('hidden');
+                        downloadLogButton.disabled = false;
+                    }
+
                     const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
                     let extension = formatoDescarga === 'excel' ? 'xlsx' : formatoDescarga === 'parquet' ? 'parquet' : 'csv';
                     
-                    if (incluirLog) {
-                        extension = 'zip';
-                    }
-
                     buttonText.textContent = `Paso 2/3: Descargando archivo limpio...`;
 
                     const blob = await response.blob();

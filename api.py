@@ -6,6 +6,8 @@ import shutil
 import os
 import zipfile
 import json
+from fpdf import FPDF
+from typing import List
 from ETL import procesar_archivo, guardar_en_db
 
 app = FastAPI(title="ETL API")
@@ -39,6 +41,35 @@ app.add_middleware(
 def servir_frontend():
     return FileResponse("index.html")
 
+@app.post("/api/descargar_log_pdf")
+def descargar_log_pdf(log_data: dict, background_tasks: BackgroundTasks):
+    """
+    Recibe una lista de strings (el log) y la convierte en un archivo PDF para descargar.
+    """
+    log_lines = log_data.get("log_lines", [])
+    if not log_lines:
+        raise HTTPException(status_code=400, detail="No se proporcionaron líneas de registro para el PDF.")
+
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(0, 10, 'Registro de Cambios (ETL)', 0, 1, 'C')
+        pdf.ln(5)
+
+        pdf.set_font("Arial", size=11)
+        for line in log_lines:
+            # FPDF espera texto codificado en latin-1 por defecto. Lo convertimos para evitar errores con acentos.
+            pdf.multi_cell(0, 7, txt=line.encode('latin-1', 'replace').decode('latin-1'), border=0, align='L')
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", dir=temp_folder) as tmp_pdf:
+            pdf.output(tmp_pdf.name)
+            background_tasks.add_task(os.remove, tmp_pdf.name)
+            return FileResponse(path=tmp_pdf.name, media_type='application/pdf', filename='log_de_cambios.pdf')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al generar el PDF: {e}")
+
 @app.post("/api/procesar")
 def procesar(
     background_tasks: BackgroundTasks,
@@ -49,8 +80,7 @@ def procesar(
     columnas_eliminar: str = Form("[]"),
     mapa_nombres: str = Form("{}"),
     formato_descarga: str = Form("csv"),
-    nombre_descarga: str = Form(""),
-    incluir_log: bool = Form(False)
+    nombre_descarga: str = Form("")
 ):
     tmp_path = None # Path del archivo CSV a procesar
     uploaded_filepath = None # Path del archivo original subido
@@ -128,10 +158,15 @@ def procesar(
             media_type = "text/csv"
             download_filename = f"{filename_base}.csv"
         
-        # Programar la eliminación del archivo descargable una vez se haya enviado de forma segura
         background_tasks.add_task(os.remove, out_tmp.name)
         
-        return FileResponse(path=out_tmp.name, media_type=media_type, filename=download_filename)
+        # Devolvemos el archivo y, en las cabeceras, enviamos el log para que el frontend lo pueda usar
+        headers = {
+            "X-ETL-Log": json.dumps(log),
+            "Access-Control-Expose-Headers": "X-ETL-Log" # Permite que el JS lea la cabecera
+        }
+        
+        return FileResponse(path=out_tmp.name, media_type=media_type, filename=download_filename, headers=headers)
     except Exception as e:
         # Si algo sale mal (ej: Polars no puede leer el CSV), devolvemos un error claro al frontend.
         raise HTTPException(status_code=400, detail=f"Error al procesar el archivo: {e}")
