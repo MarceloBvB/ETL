@@ -18,8 +18,9 @@ os.makedirs(temp_folder, exist_ok=True)
 tempfile.tempdir = temp_folder
 
 # ====== CONFIGURACIÓN DE BASE DE DATOS ======
-# 1. Para usar Neon en la nube, descomenta la siguiente línea y comenta la local:
-DB_URI = "postgresql://neondb_owner:npg_2mqukLJz4rEb@ep-holy-dawn-aq7qt7xs-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+# 1. Para usar Neon en la nube de forma segura (Render inyectará DATABASE_URL):
+# Si no encuentra la variable en Render, usará tu conexión por defecto para que siga funcionando en tu PC.
+DB_URI = os.getenv("DATABASE_URL", "postgresql://neondb_owner:npg_2mqukLJz4rEb@ep-holy-dawn-aq7qt7xs-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
 
 # 2. Para usar PostgreSQL Local en tu computadora, usa esta (cambia tu contraseña):
 # DB_URI = "postgresql://postgres:Mar0409_@localhost:5432/postgres"
