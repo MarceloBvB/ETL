@@ -59,16 +59,16 @@ def descargar_log_pdf(log_data: dict, background_tasks: BackgroundTasks):
         pdf.cell(0, 10, 'Registro de Cambios (ETL)', 0, 1, 'C')
         pdf.ln(5)
 
-        pdf.set_font("Arial", size=11)
+        pdf.set_font("Courier", size=10)
         for line in log_lines:
-            # Cortamos manualmente las líneas muy largas (aprox. a los 95 caracteres) para que quepan en la página
-            wrapped_lines = textwrap.wrap(line, width=95, break_long_words=True)
+            # Cortamos a 80 caracteres. Al usar Courier (ancho fijo), garantizamos matemáticamente que no excederá la página.
+            wrapped_lines = textwrap.wrap(line, width=80, break_long_words=True)
             if not wrapped_lines:
                 wrapped_lines = [""]
                 
             for w_line in wrapped_lines:
-                # FPDF espera texto codificado en latin-1 por defecto. Lo convertimos para evitar errores con acentos.
-                pdf.multi_cell(0, 7, txt=w_line.encode('latin-1', 'replace').decode('latin-1'), border=0, align='L')
+                # FPDF espera texto en latin-1. Lo convertimos para evitar errores con acentos.
+                pdf.multi_cell(0, 5, txt=w_line.encode('latin-1', 'replace').decode('latin-1'), border=0, align='L')
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", dir=temp_folder) as tmp_pdf:
             pdf.output(tmp_pdf.name)
