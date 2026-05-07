@@ -9,6 +9,14 @@ from ETL import procesar_archivo, guardar_en_db
 
 app = FastAPI(title="ETL API")
 
+# ====== EVITAR LÍMITES DE MEMORIA EN AWS ======
+# Forzamos a que FastAPI guarde los archivos temporales en el disco duro
+# en lugar de la carpeta por defecto (/tmp) que en Linux suele compartir la RAM.
+# Esto soluciona el "Error parsing the body" con archivos gigantes.
+temp_folder = os.path.join(os.getcwd(), "temporales")
+os.makedirs(temp_folder, exist_ok=True)
+tempfile.tempdir = temp_folder
+
 # ====== CONFIGURACIÓN DE BASE DE DATOS ======
 # 1. Para usar Neon en la nube, descomenta la siguiente línea y comenta la local:
 DB_URI = "postgresql://neondb_owner:npg_2mqukLJz4rEb@ep-holy-dawn-aq7qt7xs-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
@@ -58,7 +66,7 @@ def procesar(
             mapa_dict = None
 
         # Guardar en disco temporalmente para soportar archivos GIGANTES sin agotar la RAM
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as tmp:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder) as tmp:
             shutil.copyfileobj(file.file, tmp)
             tmp_path = tmp.name
             
@@ -84,17 +92,17 @@ def procesar(
             if formato_descarga == "excel":
                 if df.height > 1048576:
                     raise ValueError(f"Tu archivo tiene {df.height} filas. Microsoft Excel solo soporta un máximo de 1,048,576 filas por hoja. Por favor, selecciona el formato CSV o Parquet para descargar este archivo.")
-                out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+                out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx", dir=temp_folder)
                 df.write_excel(out_tmp.name)
                 media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 download_filename = f"{filename_base}.xlsx"
             elif formato_descarga == "parquet":
-                out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".parquet")
+                out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".parquet", dir=temp_folder)
                 df.write_parquet(out_tmp.name)
                 media_type = "application/octet-stream"
                 download_filename = f"{filename_base}.parquet"
             else:
-                out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
+                out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder)
                 df.write_csv(out_tmp.name, separator=separador)
                 media_type = "text/csv"
                 download_filename = f"{filename_base}.csv"
