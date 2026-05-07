@@ -34,9 +34,15 @@
             </div>
 
             <!-- Opciones extra -->
-            <div class="flex items-center space-x-3 bg-gray-50 p-4 rounded-lg border">
-                <input id="duplicados" type="checkbox" class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500">
-                <label for="duplicados" class="text-gray-700 font-medium">Eliminar registros duplicados</label>
+            <div class="bg-gray-50 p-4 rounded-lg border space-y-3">
+                <div class="flex items-center space-x-3">
+                    <input id="duplicados" type="checkbox" class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500">
+                    <label for="duplicados" class="text-gray-700 font-medium">Eliminar registros duplicados</label>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <input id="incluir_log" type="checkbox" class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500" checked>
+                    <label for="incluir_log" class="text-gray-700 font-medium">Descargar ZIP con archivo de registro (Log de cambios)</label>
+                </div>
             </div>
 
             <!-- Gestión de Columnas (Interactivo) -->
@@ -222,6 +228,7 @@
             }
 
             const duplicados = document.getElementById('duplicados').checked;
+            const incluirLog = document.getElementById('incluir_log').checked;
             const separador = separadorInput.value;
             const formatoDescarga = document.getElementById('formato_descarga').value;
             const nombreDescargaInput = document.getElementById('nombre_descarga').value.trim();
@@ -258,6 +265,7 @@
                     const formData = new FormData();
                     formData.append('file', file, safeFileName);
                     formData.append('eliminar_duplicados', duplicados);
+                    formData.append('incluir_log', incluirLog);
                     formData.append('separador', separador);
                     formData.append('columnas_eliminar', JSON.stringify(colsAEliminar));
                     formData.append('mapa_nombres', JSON.stringify(mapaNombres));
@@ -278,7 +286,11 @@
                     }
 
                     const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-                    const extension = formatoDescarga === 'excel' ? 'xlsx' : formatoDescarga === 'parquet' ? 'parquet' : 'csv';
+                    let extension = formatoDescarga === 'excel' ? 'xlsx' : formatoDescarga === 'parquet' ? 'parquet' : 'csv';
+                    
+                    if (incluirLog) {
+                        extension = 'zip';
+                    }
 
                     buttonText.textContent = `Paso 2/3: Descargando archivo limpio...`;
 

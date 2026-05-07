@@ -49,7 +49,8 @@ def procesar(
     columnas_eliminar: str = Form("[]"),
     mapa_nombres: str = Form("{}"),
     formato_descarga: str = Form("csv"),
-    nombre_descarga: str = Form("")
+    nombre_descarga: str = Form(""),
+    incluir_log: bool = Form(False)
 ):
     tmp_path = None # Path del archivo CSV a procesar
     uploaded_filepath = None # Path del archivo original subido
