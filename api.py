@@ -42,40 +42,24 @@ app.add_middleware(
 def servir_frontend():
     return FileResponse("index.html")
 
-@app.post("/api/descargar_log_pdf")
-def descargar_log_pdf(log_data: dict, background_tasks: BackgroundTasks):
+@app.post("/api/descargar_log_txt")
+def descargar_log_txt(log_data: dict, background_tasks: BackgroundTasks):
     """
-    Recibe una lista de strings (el log) y la convierte en un archivo PDF para descargar.
+    Recibe una lista de strings (el log) y la convierte en un archivo TXT para descargar.
     """
     log_lines = log_data.get("log_lines", [])
     if not log_lines:
-        raise HTTPException(status_code=400, detail="No se proporcionaron líneas de registro para el PDF.")
+        raise HTTPException(status_code=400, detail="No se proporcionaron líneas de registro para el TXT.")
 
     try:
-        pdf = FPDF()
-        pdf.add_page()
-        
-        pdf.set_font("Arial", 'B', 16)
-        pdf.cell(0, 10, 'Registro de Cambios (ETL)', 0, 1, 'C')
-        pdf.ln(5)
-
-        pdf.set_font("Courier", size=10)
-        for line in log_lines:
-            # Cortamos a 80 caracteres. Al usar Courier (ancho fijo), garantizamos matemáticamente que no excederá la página.
-            wrapped_lines = textwrap.wrap(line, width=80, break_long_words=True)
-            if not wrapped_lines:
-                wrapped_lines = [""]
-                
-            for w_line in wrapped_lines:
-                # FPDF espera texto en latin-1. Lo convertimos para evitar errores con acentos.
-                pdf.multi_cell(0, 5, txt=w_line.encode('latin-1', 'replace').decode('latin-1'), border=0, align='L')
-        
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", dir=temp_folder) as tmp_pdf:
-            pdf.output(tmp_pdf.name)
-            background_tasks.add_task(os.remove, tmp_pdf.name)
-            return FileResponse(path=tmp_pdf.name, media_type='application/pdf', filename='log_de_cambios.pdf')
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", dir=temp_folder, mode="w", encoding="utf-8") as tmp_txt:
+            tmp_txt.write("\n".join(log_lines))
+            tmp_txt_name = tmp_txt.name
+            
+        background_tasks.add_task(os.remove, tmp_txt_name)
+        return FileResponse(path=tmp_txt_name, media_type='text/plain', filename='log_de_cambios.txt')
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al generar el PDF: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al generar el archivo TXT: {e}")
 
 @app.post("/api/procesar")
 def procesar(

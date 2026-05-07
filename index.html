@@ -95,7 +95,7 @@
             </button>
 
             <button id="download-log-button" type="button" class="hidden w-full flex justify-center items-center text-blue-700 bg-blue-100 hover:bg-blue-200 focus:ring-4 focus:ring-blue-300 font-bold rounded-xl text-md px-5 py-2.5 text-center transition-all disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed">
-                Descargar Registro de Cambios (PDF)
+                Descargar Registro de Cambios (TXT)
             </button>
         </form>
     </div>
@@ -231,10 +231,10 @@
             }
 
             downloadLogButton.disabled = true;
-            downloadLogButton.textContent = 'Generando PDF...';
+            downloadLogButton.textContent = 'Generando archivo TXT...';
 
             try {
-                const response = await fetch('/api/descargar_log_pdf', {
+                const response = await fetch('/api/descargar_log_txt', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ log_lines: lastLogData })
@@ -242,14 +242,14 @@
 
                 if (!response.ok) {
                     const errorText = await response.text();
-                    throw new Error(`Error al generar el PDF: ${errorText}`);
+                    throw new Error(`Error al generar el TXT: ${errorText}`);
                 }
 
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = 'log_de_cambios.pdf';
+                a.download = 'log_de_cambios.txt';
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
@@ -258,7 +258,7 @@
                 alert(`Ocurrió un error al descargar el log: ${error.message}`);
             } finally {
                 downloadLogButton.disabled = false;
-                downloadLogButton.textContent = 'Descargar Registro de Cambios (PDF)';
+                downloadLogButton.textContent = 'Descargar Registro de Cambios (TXT)';
             }
         });
 
