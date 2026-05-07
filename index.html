@@ -252,8 +252,11 @@
                         customName = `${customName}_${i + 1}`;
                     }
 
+                    // Limpiar el nombre del archivo para evitar errores del servidor por tildes o caracteres especiales (ej: Matrícula -> Matricula)
+                    const safeFileName = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9_.-]/g, "_");
+
                     const formData = new FormData();
-                    formData.append('file', file);
+                    formData.append('file', file, safeFileName);
                     formData.append('eliminar_duplicados', duplicados);
                     formData.append('separador', separador);
                     formData.append('columnas_eliminar', JSON.stringify(colsAEliminar));
