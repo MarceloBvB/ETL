@@ -6,6 +6,7 @@ import shutil
 import os
 import zipfile
 import json
+import textwrap
 from fpdf import FPDF
 from typing import List
 from ETL import procesar_archivo, guardar_en_db
@@ -60,8 +61,14 @@ def descargar_log_pdf(log_data: dict, background_tasks: BackgroundTasks):
 
         pdf.set_font("Arial", size=11)
         for line in log_lines:
-            # FPDF espera texto codificado en latin-1 por defecto. Lo convertimos para evitar errores con acentos.
-            pdf.multi_cell(0, 7, txt=line.encode('latin-1', 'replace').decode('latin-1'), border=0, align='L', split_only=False)
+            # Cortamos manualmente las líneas muy largas (aprox. a los 95 caracteres) para que quepan en la página
+            wrapped_lines = textwrap.wrap(line, width=95, break_long_words=True)
+            if not wrapped_lines:
+                wrapped_lines = [""]
+                
+            for w_line in wrapped_lines:
+                # FPDF espera texto codificado en latin-1 por defecto. Lo convertimos para evitar errores con acentos.
+                pdf.multi_cell(0, 7, txt=w_line.encode('latin-1', 'replace').decode('latin-1'), border=0, align='L')
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", dir=temp_folder) as tmp_pdf:
             pdf.output(tmp_pdf.name)
