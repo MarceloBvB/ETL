@@ -31,37 +31,43 @@ def procesar_archivo(file_path: str, separador: str = ",", eliminar_duplicados: 
     """
     Función central para procesar los datos, independiente de la interfaz.
     """
-    df = pl.read_csv(file_path, separator=separador, infer_schema_length=10000, truncate_ragged_lines=True)
+    # Cambiamos read_csv por scan_csv para activar el modo perezoso (Lazy Loading)
+    # Esto evita cargar todo el archivo en la memoria RAM de golpe.
+    lf = pl.scan_csv(file_path, separator=separador, infer_schema_length=10000, truncate_ragged_lines=True)
     
     log_cambios = [
         "=== REGISTRO DE CAMBIOS DE ETL ===",
         f"Fecha y hora: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        f"Archivo original cargado con {df.height} filas y {df.width} columnas."
+        f"Archivo original enlazado. (Modo ahorro de memoria RAM activado)"
     ]
     
     if eliminar_duplicados:
-        filas_antes = df.height
-        df = df.unique()
-        log_cambios.append(f"Acción: Se eliminaron {filas_antes - df.height} filas duplicadas. Total restante: {df.height} filas.")
+        lf = lf.unique()
+        log_cambios.append(f"Acción: Se eliminaron filas duplicadas.")
         
     if columnas_a_eliminar:
-        columnas_existentes = [col for col in columnas_a_eliminar if col in df.columns]
+        columnas_existentes = [col for col in columnas_a_eliminar if col in lf.columns]
         if columnas_existentes:
-            df = df.drop(columnas_existentes)
+            lf = lf.drop(columnas_existentes)
             log_cambios.append(f"Acción: Se eliminaron las columnas: {', '.join(columnas_existentes)}.")
         
     if mapa_nombres:
-        df = df.rename(mapa_nombres)
+        lf = lf.rename(mapa_nombres)
         renombradas = [f"'{k}' -> '{v}'" for k, v in mapa_nombres.items() if k != v]
         if renombradas:
             log_cambios.append(f"Acción: Columnas renombradas: {', '.join(renombradas)}")
             
-    columnas_texto = [limpiar_columna_polars(col) for col in df.columns if df[col].dtype == pl.String]
+    # lf.schema devuelve un diccionario {columna: tipo_de_dato}
+    columnas_texto = [limpiar_columna_polars(col) for col, dtype in lf.schema.items() if dtype == pl.String]
     
     if columnas_texto:
-        df = df.with_columns(columnas_texto)
+        lf = lf.with_columns(columnas_texto)
         log_cambios.append("Acción: Se normalizó el texto en las columnas de texto.")
         
+    # Recién aquí procesamos los datos usando 'streaming' por bloques para no agotar la RAM
+    df = lf.collect(streaming=True)
+    log_cambios.append(f"Proceso finalizado. Total resultante: {df.height} filas y {df.width} columnas.")
+
     return df, log_cambios
 
 def guardar_en_db(df: pl.DataFrame, db_uri: str, nombre_tabla: str):
