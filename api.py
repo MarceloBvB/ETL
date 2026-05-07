@@ -61,7 +61,7 @@ def descargar_log_pdf(log_data: dict, background_tasks: BackgroundTasks):
         pdf.set_font("Arial", size=11)
         for line in log_lines:
             # FPDF espera texto codificado en latin-1 por defecto. Lo convertimos para evitar errores con acentos.
-            pdf.multi_cell(0, 7, txt=line.encode('latin-1', 'replace').decode('latin-1'), border=0, align='L')
+            pdf.multi_cell(0, 7, txt=line.encode('latin-1', 'replace').decode('latin-1'), border=0, align='L', split_only=False)
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", dir=temp_folder) as tmp_pdf:
             pdf.output(tmp_pdf.name)
