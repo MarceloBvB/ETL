@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import tempfile
 import shutil
 import os
+import zipfile
 import json
 from ETL import procesar_archivo, guardar_en_db
 
@@ -50,6 +51,8 @@ def procesar(
     formato_descarga: str = Form("csv"),
     nombre_descarga: str = Form("")
 ):
+    tmp_path = None # Path del archivo CSV a procesar
+    uploaded_filepath = None # Path del archivo original subido
     try:
         # Interpretar las listas y diccionarios enviados como JSON desde el Frontend
         try:
@@ -66,58 +69,78 @@ def procesar(
         except json.JSONDecodeError:
             mapa_dict = None
 
-        # Guardar en disco temporalmente para soportar archivos GIGANTES sin agotar la RAM
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder) as tmp:
-            shutil.copyfileobj(file.file, tmp)
-            tmp_path = tmp.name
+        # Guardar el archivo subido en un path temporal
+        with tempfile.NamedTemporaryFile(delete=False, dir=temp_folder, suffix=os.path.splitext(file.filename)[1]) as tmp_upload:
+            shutil.copyfileobj(file.file, tmp_upload)
+            uploaded_filepath = tmp_upload.name
+
+        # Si es un zip, lo descomprimimos. Si no, usamos el archivo original.
+        if file.filename.lower().endswith(".zip"):
+            print("Archivo ZIP detectado. Extrayendo...")
+            with zipfile.ZipFile(uploaded_filepath, 'r') as zip_ref:
+                csv_filename_in_zip = next((name for name in zip_ref.namelist() if name.lower().endswith(('.csv', '.txt')) and not name.startswith('__MACOSX')), None)
+                if not csv_filename_in_zip:
+                    raise HTTPException(status_code=400, detail="El archivo ZIP no contiene ningún archivo .csv o .txt.")
+                
+                # Creamos un nuevo archivo temporal para el contenido del CSV extraído
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder) as extracted_file:
+                    extracted_file.write(zip_ref.read(csv_filename_in_zip))
+                    tmp_path = extracted_file.name # Este es el archivo que procesaremos
+                print(f"Archivo extraído a: {tmp_path}")
+        else:
+            # Si no es zip, el archivo a procesar es el que se subió
+            tmp_path = uploaded_filepath
             
-        try:
-            # Procesamos con la ruta del archivo, no con los bytes en RAM
-            df, log = procesar_archivo(
-                file_path=tmp_path,
-                separador=separador,
-                eliminar_duplicados=eliminar_duplicados,
-                columnas_a_eliminar=cols_a_eliminar,
-                mapa_nombres=mapa_dict,
-            )
-            print("\n".join(log))
-            
-            # ⚡ Iniciar la subida a Neon silenciosamente en segundo plano
-            if nombre_tabla:
-                background_tasks.add_task(guardar_en_db, df, DB_URI, nombre_tabla)
-            
-            # Escribir salida en otro archivo temporal y transmitirlo
-            original_base, _ = os.path.splitext(file.filename)
-            filename_base = nombre_descarga.strip() if nombre_descarga.strip() else f"limpio_{original_base}"
-            
-            if formato_descarga == "excel":
-                if df.height > 1048576:
-                    raise ValueError(f"Tu archivo tiene {df.height} filas. Microsoft Excel solo soporta un máximo de 1,048,576 filas por hoja. Por favor, selecciona el formato CSV o Parquet para descargar este archivo.")
-                out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx", dir=temp_folder)
-                df.write_excel(out_tmp.name)
-                media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                download_filename = f"{filename_base}.xlsx"
-            elif formato_descarga == "parquet":
-                out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".parquet", dir=temp_folder)
-                df.write_parquet(out_tmp.name)
-                media_type = "application/octet-stream"
-                download_filename = f"{filename_base}.parquet"
-            else:
-                out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder)
-                df.write_csv(out_tmp.name, separator=separador)
-                media_type = "text/csv"
-                download_filename = f"{filename_base}.csv"
-            
-            # Programar la eliminación del archivo descargable una vez se haya enviado de forma segura
-            background_tasks.add_task(os.remove, out_tmp.name)
-            
-            return FileResponse(path=out_tmp.name, media_type=media_type, filename=download_filename)
-        finally:
-            if 'tmp_path' in locals() and os.path.exists(tmp_path):
-                os.remove(tmp_path)
+        # Procesamos con la ruta del archivo, no con los bytes en RAM
+        df, log = procesar_archivo(
+            file_path=tmp_path,
+            separador=separador,
+            eliminar_duplicados=eliminar_duplicados,
+            columnas_a_eliminar=cols_a_eliminar,
+            mapa_nombres=mapa_dict,
+        )
+        print("\n".join(log))
+        
+        # ⚡ Iniciar la subida a Neon silenciosamente en segundo plano
+        if nombre_tabla:
+            background_tasks.add_task(guardar_en_db, df, DB_URI, nombre_tabla)
+        
+        # Escribir salida en otro archivo temporal y transmitirlo
+        original_base, _ = os.path.splitext(file.filename)
+        filename_base = nombre_descarga.strip() if nombre_descarga.strip() else f"limpio_{original_base}"
+        
+        if formato_descarga == "excel":
+            if df.height > 1048576:
+                raise ValueError(f"Tu archivo tiene {df.height} filas. Microsoft Excel solo soporta un máximo de 1,048,576 filas por hoja. Por favor, selecciona el formato CSV o Parquet para descargar este archivo.")
+            out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx", dir=temp_folder)
+            df.write_excel(out_tmp.name)
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            download_filename = f"{filename_base}.xlsx"
+        elif formato_descarga == "parquet":
+            out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".parquet", dir=temp_folder)
+            df.write_parquet(out_tmp.name)
+            media_type = "application/octet-stream"
+            download_filename = f"{filename_base}.parquet"
+        else:
+            out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder)
+            df.write_csv(out_tmp.name, separator=separador)
+            media_type = "text/csv"
+            download_filename = f"{filename_base}.csv"
+        
+        # Programar la eliminación del archivo descargable una vez se haya enviado de forma segura
+        background_tasks.add_task(os.remove, out_tmp.name)
+        
+        return FileResponse(path=out_tmp.name, media_type=media_type, filename=download_filename)
     except Exception as e:
         # Si algo sale mal (ej: Polars no puede leer el CSV), devolvemos un error claro al frontend.
         raise HTTPException(status_code=400, detail=f"Error al procesar el archivo: {e}")
+    finally:
+        # Limpieza de archivos temporales
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        # Si el archivo subido era un zip, tmp_path es diferente y hay que borrar el zip también
+        if uploaded_filepath and uploaded_filepath != tmp_path and os.path.exists(uploaded_filepath):
+            os.remove(uploaded_filepath)
 
 if __name__ == "__main__":
     import uvicorn
