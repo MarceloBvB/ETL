@@ -38,6 +38,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def servir_index():
+    return FileResponse("index.html")
+
 @app.get("/parte1")
 def servir_parte1():
     return FileResponse("parte1.html")
