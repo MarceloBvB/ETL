@@ -326,6 +326,9 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
         tablas["Direcciones"] = df_direcciones
         
     # Siempre devolvemos la tabla unificada por si acaso
-    tablas["Tabla_Principal_Normalizada"] = df
+    df_principal = df.clone()
+    if id_col in df_principal.columns:
+        df_principal = df_principal.drop(id_col)
+    tablas["Tabla_Principal_Normalizada"] = df_principal
     
     return tablas
