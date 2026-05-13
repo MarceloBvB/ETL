@@ -9,7 +9,7 @@ import json
 import textwrap
 from fpdf import FPDF
 from typing import List
-from ETL import procesar_archivo, guardar_en_db, procesar_portafolio_2, procesar_portafolio_3
+from ETL import procesar_archivo, guardar_en_db, procesar_portafolio_unificado
 
 app = FastAPI(title="ETL API")
 
@@ -173,33 +173,8 @@ def procesar(
         if uploaded_filepath and uploaded_filepath != tmp_path and os.path.exists(uploaded_filepath):
             os.remove(uploaded_filepath)
 
-@app.post("/api/portafolio2")
-def api_portafolio2(
-    background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    separador: str = Form(","),
-    nombre_tabla: str = Form("FAMOSOS")
-):
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder) as tmp:
-            shutil.copyfileobj(file.file, tmp)
-            tmp_path = tmp.name
-            
-        df = procesar_portafolio_2(tmp_path, separador)
-        if nombre_tabla:
-            background_tasks.add_task(guardar_en_db, df, DB_URI, nombre_tabla)
-            
-        out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder)
-        df.write_csv(out_tmp.name, separator=",")
-        
-        background_tasks.add_task(os.remove, tmp_path)
-        background_tasks.add_task(os.remove, out_tmp.name)
-        return FileResponse(path=out_tmp.name, media_type="text/csv", filename="famosos_limpio.csv")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/api/portafolio3")
-def api_portafolio3(
+@app.post("/api/portafolio_universal")
+def api_portafolio_universal(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     separador: str = Form(",")
@@ -209,22 +184,20 @@ def api_portafolio3(
             shutil.copyfileobj(file.file, tmp)
             tmp_path = tmp.name
             
-        df_lug, df_geo, df_dir = procesar_portafolio_3(tmp_path, separador)
-        background_tasks.add_task(guardar_en_db, df_lug, DB_URI, "Lugares")
-        background_tasks.add_task(guardar_en_db, df_geo, DB_URI, "Georeferencias")
-        background_tasks.add_task(guardar_en_db, df_dir, DB_URI, "Direcciones")
+        tablas = procesar_portafolio_unificado(tmp_path, separador)
         
         zip_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip", dir=temp_folder)
         with zipfile.ZipFile(zip_tmp.name, 'w') as zipf:
-            for df, name in [(df_lug, "Lugares.csv"), (df_geo, "Georeferencias.csv"), (df_dir, "Direcciones.csv")]:
+            for nombre_tabla, df in tablas.items():
+                background_tasks.add_task(guardar_en_db, df, DB_URI, nombre_tabla)
                 tmp_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder)
                 df.write_csv(tmp_csv.name, separator=",")
-                zipf.write(tmp_csv.name, name)
+                zipf.write(tmp_csv.name, f"{nombre_tabla}.csv")
                 background_tasks.add_task(os.remove, tmp_csv.name)
                 
         background_tasks.add_task(os.remove, tmp_path)
         background_tasks.add_task(os.remove, zip_tmp.name)
-        return FileResponse(path=zip_tmp.name, media_type="application/zip", filename="lugares_normalizados.zip")
+        return FileResponse(path=zip_tmp.name, media_type="application/zip", filename="datos_analizados.zip")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

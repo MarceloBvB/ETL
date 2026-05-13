@@ -118,88 +118,89 @@ def parse_date_robust(date_str):
             pass
     return None
 
-def procesar_portafolio_2(file_path: str, separador: str = ","):
-    """Procesa el portafolio 2: Famosos y Cumpleaños."""
-    # 1. Cargar y eliminar registros duplicados
+def procesar_portafolio_unificado(file_path: str, separador: str = ","):
+    """Unifica la lógica de los portafolios 2 y 3: procesa cualquier archivo, 
+    limpia textos, estandariza fechas, calcula edades y divide en tablas si detecta lugares."""
     df = _leer_csv_robusto(file_path, separador)
-    df = df.unique()
     
-    cols = df.columns
-    if len(cols) < 2:
-        raise ValueError("El archivo no pudo dividirse. Verifica que el separador sea correcto.")
-        
-    col_nombre = cols[0]
-    col_fecha = cols[1]
-    
-    today = datetime.now().date()
-    
-    procesados = []
-    for row in df.to_dicts():
-        nombre = str(row.get(col_nombre, ""))
-        fecha_str = str(row.get(col_fecha, ""))
-        
-        # 2. Quitar separadores no permitidos en nombres (solo letras y espacios)
-        nombre_limpio = re.sub(r"[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s]", "", nombre).strip()
-        
-        # 3. Formatear Fecha y calcular edad
-        dt = parse_date_robust(fecha_str)
-        if dt:
-            # Corregir error común de años de 2 dígitos (ej: 68 -> 2068 en vez de 1968)
-            if dt.year > today.year:
-                dt = dt.replace(year=dt.year - 100)
-                
-            # Unificar formato Chile: DD-MM-YYYY
-            fecha_formateada = dt.strftime('%d-%m-%Y')
-            
-            # 4. Atributo Edad
-            age = today.year - dt.year - ((today.month, today.day) < (dt.month, dt.day))
-            
-            # 5. Flag de Cumpleaños
-            es_cumple = (today.month == dt.month) and (today.day == dt.day)
-        else:
-            fecha_formateada = fecha_str
-            age = None
-            es_cumple = False
-            
-        procesados.append({
-            "Nombre": nombre_limpio,
-            "Fecha_Nacimiento": fecha_formateada,
-            "Edad": age,
-            "Es_Cumpleanos": es_cumple
-        })
-        
-    return pl.DataFrame(procesados)
-
-def procesar_portafolio_3(file_path: str, separador: str = ","):
-    """Procesa el portafolio 3: Lugares, Georeferencias y Direcciones."""
     # 1. Eliminar duplicados
-    df = _leer_csv_robusto(file_path, separador)
     df = df.unique()
     
-    # Asegurar que exista un ID para relacionar las tablas
+    # 2. Asegurar ID si no existe
     if "ID" not in df.columns and "id" not in [c.lower() for c in df.columns]:
         df = df.with_columns(pl.Series("ID", range(1, len(df) + 1)))
     id_col = next((c for c in df.columns if c.lower() == "id"), "ID")
     
-    # Buscador automático de columnas relacionadas a la temática
+    # 3. Limpieza universal de textos (Mayúsculas, sin tildes, quitar caracteres raros)
+    cols_texto = [col for col, dtype in df.schema.items() if dtype == pl.String]
+    today = datetime.now().date()
+    
+    if cols_texto:
+        df = df.with_columns([
+            limpiar_columna_polars(col).str.replace_all(r"[^A-Z0-9\s\.,:\-/_]", "").alias(col)
+            for col in cols_texto
+        ])
+
+    # 4. Detectar fechas automáticamente en cualquier columna (Lógica Famosos)
+    columnas_con_fechas = []
+    for col in cols_texto:
+        muestras = df[col].drop_nulls().head(5).to_list()
+        if any(parse_date_robust(m) is not None for m in muestras):
+            columnas_con_fechas.append(col)
+
+    def extraer_fecha(val):
+        dt = parse_date_robust(val)
+        if dt:
+            if dt.year > today.year: dt = dt.replace(year=dt.year - 100)
+            return dt.strftime('%d-%m-%Y')
+        return val
+
+    def calcular_edad(val):
+        dt = parse_date_robust(val)
+        if dt:
+            if dt.year > today.year: dt = dt.replace(year=dt.year - 100)
+            return today.year - dt.year - ((today.month, today.day) < (dt.month, dt.day))
+        return None
+
+    def es_cumple(val):
+        dt = parse_date_robust(val)
+        if dt:
+            if dt.year > today.year: dt = dt.replace(year=dt.year - 100)
+            return (today.month == dt.month) and (today.day == dt.day)
+        return False
+
+    for col in columnas_con_fechas:
+        df = df.with_columns(
+            pl.col(col).map_elements(extraer_fecha, return_dtype=pl.String).alias(col),
+            pl.col(col).map_elements(calcular_edad, return_dtype=pl.Int32).alias("Edad_Calculada"),
+            pl.col(col).map_elements(es_cumple, return_dtype=pl.Boolean).alias("Es_Cumpleanos")
+        )
+
+    # 5. Detectar columnas geográficas (Lógica Lugares)
     def get_col(keywords):
         return next((col for col in df.columns if any(k in col.lower() for k in keywords)), None)
         
-    # 2. Crear las tres tablas separando las columnas dinámicamente
-    # Direcciones: ID, nombre_calle, numero_calle, ciudad_estado_provincia, país
     calle_col, num_col = get_col(["calle", "street", "direccion"]), get_col(["numero", "num", "number"])
     ciudad_col, pais_col = get_col(["ciudad", "city", "provincia", "estado", "state"]), get_col(["pais", "country"])
-    df_direcciones = df.select([
-        pl.col(id_col).alias("ID"),
-        pl.col(calle_col).alias("nombre_calle") if calle_col else pl.lit("").alias("nombre_calle"),
-        pl.col(num_col).alias("numero_calle") if num_col else pl.lit("").alias("numero_calle"),
-        pl.col(ciudad_col).alias("ciudad_estado_provincia") if ciudad_col else pl.lit("").alias("ciudad_estado_provincia"),
-        pl.col(pais_col).alias("país") if pais_col else pl.lit("").alias("país"),
-    ])
-    # Georeferencias: ID, latitud, longitud
     lat_col, lon_col = get_col(["lat", "latitud"]), get_col(["lon", "longitud"])
-    df_geo = df.select([pl.col(id_col).alias("ID"), pl.col(lat_col).alias("latitud") if lat_col else pl.lit(0.0).alias("latitud"), pl.col(lon_col).alias("longitud") if lon_col else pl.lit(0.0).alias("longitud")])
-    # Lugares: ID, nombre_lugar
     nombre_col = get_col(["lugar", "nombre", "name", "place"])
-    df_lugares = df.select([pl.col(id_col).alias("ID"), pl.col(nombre_col).alias("nombre_lugar") if nombre_col else pl.lit("").alias("nombre_lugar")])
-    return df_lugares, df_geo, df_direcciones
+
+    tablas = {}
+    if calle_col or lat_col or ciudad_col:
+        df_direcciones = df.select([
+            pl.col(id_col).alias("ID"), pl.col(calle_col).alias("nombre_calle") if calle_col else pl.lit("").alias("nombre_calle"),
+            pl.col(num_col).alias("numero_calle") if num_col else pl.lit("").alias("numero_calle"),
+            pl.col(ciudad_col).alias("ciudad_estado_provincia") if ciudad_col else pl.lit("").alias("ciudad_estado_provincia"),
+            pl.col(pais_col).alias("país") if pais_col else pl.lit("").alias("país"),
+        ])
+        df_geo = df.select([pl.col(id_col).alias("ID"), pl.col(lat_col).alias("latitud") if lat_col else pl.lit("0.0").alias("latitud"), pl.col(lon_col).alias("longitud") if lon_col else pl.lit("0.0").alias("longitud")])
+        df_lugares = df.select([pl.col(id_col).alias("ID"), pl.col(nombre_col).alias("nombre_lugar") if nombre_col else pl.lit("").alias("nombre_lugar")])
+        
+        tablas["Lugares"] = df_lugares
+        tablas["Georeferencias"] = df_geo
+        tablas["Direcciones"] = df_direcciones
+        
+    # Siempre devolvemos la tabla unificada por si acaso
+    tablas["Tabla_Principal_Normalizada"] = df
+    
+    return tablas
