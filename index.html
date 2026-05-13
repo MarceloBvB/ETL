@@ -8,16 +8,31 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 min-h-screen flex items-center justify-center p-6">
-    <div class="bg-white max-w-lg w-full rounded-2xl shadow-xl p-8 border border-gray-100 text-center">
+    <div class="bg-white max-w-2xl w-full rounded-2xl shadow-xl p-8 border border-gray-100 text-center">
         <h1 class="text-3xl font-bold text-gray-800 mb-2">Plataforma ETL</h1>
         <p class="text-gray-500 mb-8">Selecciona la parte de la evaluación a la que deseas acceder:</p>
         
         <div class="space-y-4 flex flex-col">
-            <a href="/parte1" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-md text-lg inline-block">
-                Parte 1: Limpieza de Datos
+            <a href="/parte1" class="block w-full bg-white border-2 border-blue-500 hover:bg-blue-50 rounded-xl p-6 transition-all shadow-sm text-left">
+                <h2 class="text-2xl font-bold text-blue-700 mb-2">Evaluación 2 Parte 1</h2>
+                <ul class="text-sm text-gray-700 list-disc pl-5 space-y-1">
+                    <li>Unificar los datos en uno sólo tipo (MAYÚSCULAS).</li>
+                    <li>Quitar caracteres especiales (tildes, eñes, etc).</li>
+                    <li>Eliminar registros duplicados.</li>
+                    <li>Agregar un archivo de registro de cambios realizados (log).</li>
+                    <li>Interfaz de usuario sencilla para cargar el archivo.</li>
+                </ul>
             </a>
-            <a href="/parte2" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-md text-lg inline-block">
-                Parte 2: Portafolio Unificado
+            
+            <a href="/parte2" class="block w-full bg-white border-2 border-green-500 hover:bg-green-50 rounded-xl p-6 transition-all shadow-sm text-left">
+                <h2 class="text-2xl font-bold text-green-700 mb-2">Evaluación 2 Parte 2</h2>
+                <ul class="text-sm text-gray-700 list-disc pl-5 space-y-1">
+                    <li>Unificar fechas al formato utilizado en Chile (DD-MM-YYYY).</li>
+                    <li>Quitar separadores no permitidos y eliminar registros duplicados.</li>
+                    <li>Agregar la edad y flag de cumpleaños para los personajes de la lista.</li>
+                    <li>Dividir en tres tablas: Lugares, Georeferencias y Direcciones.</li>
+                    <li>Tabla Direcciones compuesta por: ID, nombre_calle, numero_calle, ciudad_estado_provincia, país.</li>
+                </ul>
             </a>
         </div>
     </div>
