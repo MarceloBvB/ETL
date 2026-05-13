@@ -42,6 +42,14 @@
                 </select>
             </div>
 
+            <!-- Nombre de Descarga -->
+            <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
+                <h3 class="font-semibold text-gray-700">Nombre del archivo final (Opcional)</h3>
+                <div>
+                    <input id="nombre_descarga" type="text" placeholder="Ej: mis_datos_unificados" class="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5">
+                </div>
+            </div>
+
             <button id="submit-button-2" type="submit" class="w-full flex justify-center items-center text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 font-bold rounded-xl text-lg px-5 py-3.5 text-center transition-all shadow-md disabled:bg-green-400 disabled:cursor-not-allowed">
                 <span id="button-text-2">Unificar y Descargar</span>
                 <svg id="spinner-2" class="animate-spin ml-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -62,6 +70,7 @@
         const buttonText = document.getElementById('button-text-2');
         const spinner = document.getElementById('spinner-2');
         const separadorInput = document.getElementById('separador-2');
+        const nombreDescargaInput = document.getElementById('nombre_descarga');
 
         fileInput.addEventListener('change', () => {
             if (fileInput.files.length > 0) {
@@ -91,6 +100,7 @@
                 const formData = new FormData();
                 formData.append('file', file, safeFileName);
                 formData.append('separador', separadorInput.value);
+                formData.append('nombre_descarga', nombreDescargaInput.value.trim());
                 
                 const response = await fetch('/api/portafolio_universal', {
                     method: 'POST',

@@ -41,17 +41,6 @@
                 </div>
             </div>
 
-            <!-- Gestión de Columnas (Interactivo) -->
-            <div id="column-management-section" class="hidden bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
-                <div class="flex justify-between items-center">
-                    <h3 class="font-semibold text-gray-700">Gestión de Columnas</h3>
-                </div>
-                <p class="text-xs text-gray-500">Desmarca las columnas que no quieres incluir. Haz clic en el lápiz para renombrar.</p>
-                <div id="column-list" class="max-h-52 overflow-y-auto bg-white border border-gray-200 rounded-md divide-y divide-gray-100">
-                    <!-- Se llena automáticamente con Javascript -->
-                </div>
-            </div>
-
             <!-- Separador -->
             <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
                 <h3 class="font-semibold text-gray-700">Separador del archivo</h3>
@@ -59,30 +48,6 @@
                     <option value=",">Coma (,)</option>
                     <option value=";">Punto y coma (;)</option>
                     <option value="\t">Tabulador</option>
-                </select>
-            </div>
-
-            <!-- Vista Previa -->
-            <div id="preview-section" class="hidden bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3 overflow-x-auto">
-                <h3 class="font-semibold text-gray-700 text-sm">Vista previa (Primeras filas)</h3>
-                <div id="preview-table-container" class="text-sm text-gray-600"></div>
-            </div>
-
-            <!-- Nombre de Tabla BD -->
-            <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
-                <h3 class="font-semibold text-gray-700">Nombre de la tabla en Base de Datos</h3>
-                <div>
-                    <input id="nombre_tabla" type="text" value="COMUNAS_NORM" class="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5" placeholder="Ej: COMUNAS_NORM">
-                </div>
-            </div>
-
-            <!-- Formato de Descarga -->
-            <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
-                <h3 class="font-semibold text-gray-700">Formato de descarga</h3>
-                <select id="formato_descarga" class="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5">
-                    <option value="csv">CSV (Recomendado, universal)</option>
-                    <option value="excel">Excel (.xlsx)</option>
-                    <option value="parquet">Parquet (Rápido, ideal para Big Data)</option>
                 </select>
             </div>
 
@@ -118,98 +83,9 @@
         const buttonText = document.getElementById('button-text');
         const spinner = document.getElementById('spinner');
         const separadorInput = document.getElementById('separador');
-        const previewSection = document.getElementById('preview-section');
-        const previewTableContainer = document.getElementById('preview-table-container');
-        const columnManagementSection = document.getElementById('column-management-section');
-        const columnList = document.getElementById('column-list');
         const downloadLogButton = document.getElementById('download-log-button');
         
-        let columnState = [];
         let lastLogData = null;
-
-        function updatePreview() {
-            if (fileInput.files.length === 0) return;
-            const file = fileInput.files[0];
-            const separador = separadorInput.value;
-            
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const text = e.target.result;
-                const lines = text.split(/\r?\n/).filter(line => line.trim() !== '').slice(0, 6);
-                
-                if (lines.length === 0) return;
-                
-                let html = '<table class="min-w-full divide-y divide-gray-200 text-left text-xs"><thead class="bg-gray-200"><tr>';
-                const headers = lines[0].split(separador);
-                headers.forEach(h => html += `<th class="px-3 py-2 font-semibold text-gray-700 border">${h.trim()}</th>`);
-                html += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
-                
-                for (let i = 1; i < lines.length; i++) {
-                    const cells = lines[i].split(separador);
-                    html += '<tr>';
-                    for (let j = 0; j < headers.length; j++) {
-                        const cellValue = cells[j] !== undefined ? cells[j].trim() : '';
-                        html += `<td class="px-3 py-2 border whitespace-nowrap">${cellValue}</td>`;
-                    }
-                    html += '</tr>';
-                }
-                html += '</tbody></table>';
-                
-                previewTableContainer.innerHTML = html;
-                previewSection.classList.remove('hidden');
-                
-                columnState = headers.map(h => ({ original: h.trim(), name: h.trim(), keep: true }));
-                renderColumns();
-                columnManagementSection.classList.remove('hidden');
-            };
-            reader.readAsText(file.slice(0, 50000));
-        }
-        
-        function renderColumns() {
-            columnList.innerHTML = '';
-            columnState.forEach((col, index) => {
-                const div = document.createElement('div');
-                div.className = 'flex items-center justify-between p-2 hover:bg-gray-50 transition-colors';
-                div.innerHTML = `
-                    <div class="flex items-center space-x-3 w-full overflow-hidden">
-                        <input type="checkbox" class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 flex-shrink-0" ${col.keep ? 'checked' : ''} onchange="toggleColumn(${index}, this.checked)">
-                        <div class="flex-1 flex items-center min-w-0">
-                            <span id="span-${index}" class="text-sm font-medium text-gray-700 truncate w-full" title="${col.original}">${col.name}</span>
-                            <input id="input-${index}" type="text" class="hidden w-full text-sm border border-blue-300 rounded px-2 py-1 outline-none focus:ring-2 focus:ring-blue-500" value="${col.name}" onkeydown="if(event.key==='Enter'){saveEdit(${index}); event.preventDefault();}">
-                        </div>
-                    </div>
-                    <div class="flex-shrink-0 ml-2 flex space-x-1">
-                        <button type="button" id="btn-${index}" class="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50 transition-all" onclick="toggleEdit(${index})" title="Renombrar columna">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                        </button>
-                        <button type="button" id="save-${index}" class="hidden p-1.5 text-green-600 hover:text-green-700 rounded hover:bg-green-50 transition-all" onclick="saveEdit(${index})" title="Guardar">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                        </button>
-                    </div>
-                `;
-                columnList.appendChild(div);
-            });
-        }
-        
-        window.toggleColumn = function(index, checked) {
-            columnState[index].keep = checked;
-        };
-
-        window.toggleEdit = function(index) {
-            document.getElementById(`span-${index}`).classList.add('hidden');
-            document.getElementById(`btn-${index}`).classList.add('hidden');
-            const input = document.getElementById(`input-${index}`);
-            input.classList.remove('hidden');
-            input.focus();
-            input.setSelectionRange(input.value.length, input.value.length);
-            document.getElementById(`save-${index}`).classList.remove('hidden');
-        };
-
-        window.saveEdit = function(index) {
-            const newVal = document.getElementById(`input-${index}`).value.trim();
-            if (newVal) columnState[index].name = newVal;
-            renderColumns(); 
-        };
 
         fileInput.addEventListener('change', () => {
             if (fileInput.files.length > 0) {
@@ -221,13 +97,10 @@
                 uploadPrompt.classList.add('hidden');
                 fileInfo.classList.remove('hidden');
                 fileInfo.classList.add('flex');
-                updatePreview();
                 downloadLogButton.classList.add('hidden');
                 lastLogData = null;
             }
         });
-
-        separadorInput.addEventListener('change', updatePreview);
 
         downloadLogButton.addEventListener('click', async () => {
             if (!lastLogData) {
@@ -280,15 +153,7 @@
 
             const duplicados = document.getElementById('duplicados').checked;
             const separador = separadorInput.value;
-            const formatoDescarga = document.getElementById('formato_descarga').value;
             const nombreDescargaInput = document.getElementById('nombre_descarga').value.trim();
-            const nombreTablaInput = document.getElementById('nombre_tabla').value.trim();
-            
-            const colsAEliminar = columnState.filter(c => !c.keep).map(c => c.original);
-            const mapaNombres = {};
-            columnState.filter(c => c.keep && c.original !== c.name).forEach(c => {
-                mapaNombres[c.original] = c.name;
-            });
             
             submitButton.disabled = true;
             buttonText.textContent = 'Iniciando proceso...';
@@ -299,8 +164,6 @@
                     const file = fileInput.files[i];
                     buttonText.textContent = `Paso 1/3: Limpiando archivo ${i + 1}...`;
                     
-                    const nombreTabla = nombreTablaInput || file.name.split('.')[0].replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
-
                     let customName = nombreDescargaInput;
                     if (customName && fileInput.files.length > 1) {
                         customName = `${customName}_${i + 1}`;
@@ -312,11 +175,11 @@
                     formData.append('file', file, safeFileName);
                     formData.append('eliminar_duplicados', duplicados);
                     formData.append('separador', separador);
-                    formData.append('columnas_eliminar', JSON.stringify(colsAEliminar));
-                    formData.append('mapa_nombres', JSON.stringify(mapaNombres));
-                    formData.append('formato_descarga', formatoDescarga);
+                    formData.append('columnas_eliminar', '[]');
+                    formData.append('mapa_nombres', '{}');
+                    formData.append('formato_descarga', 'excel'); // Forzar siempre Excel
                     formData.append('nombre_descarga', customName);
-                    formData.append('nombre_tabla', nombreTabla);
+                    formData.append('nombre_tabla', ''); // Vacío para no guardar en DB
                     
                     const response = await fetch('/api/procesar', {
                         method: 'POST',
@@ -336,7 +199,7 @@
                     }
 
                     const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-                    let extension = formatoDescarga === 'excel' ? 'xlsx' : formatoDescarga === 'parquet' ? 'parquet' : 'csv';
+                    let extension = 'xlsx'; // Formato de descarga siempre será excel en frontend
                     
                     buttonText.textContent = `Paso 2/3: Descargando archivo limpio...`;
 

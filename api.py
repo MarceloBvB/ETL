@@ -181,7 +181,8 @@ def procesar(
 def api_portafolio_universal(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    separador: str = Form(",")
+    separador: str = Form(","),
+    nombre_descarga: str = Form("")
 ):
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder) as tmp:
@@ -196,18 +197,20 @@ def api_portafolio_universal(
             
         # Para la descarga, usar solo la tabla principal que contiene "todo ordenado"
         df_final = tablas["Tabla_Principal_Normalizada"]
+        
+        filename_base = nombre_descarga.strip() if nombre_descarga.strip() else "datos_analizados_unificados"
                  
         # Si el archivo es demasiado grande para Excel, lo devolvemos como CSV
         if df_final.height > 1048576:
             out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder)
             df_final.write_csv(out_tmp.name, separator=",")
             media_type = "text/csv"
-            download_filename = "datos_analizados_unificados.csv"
+            download_filename = f"{filename_base}.csv"
         else:
             out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx", dir=temp_folder)
             df_final.write_excel(out_tmp.name)
             media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            download_filename = "datos_analizados_unificados.xlsx"
+            download_filename = f"{filename_base}.xlsx"
 
         background_tasks.add_task(os.remove, tmp_path)
         background_tasks.add_task(os.remove, out_tmp.name)
