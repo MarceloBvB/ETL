@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evaluación - Parte 2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center p-6">
+    <div class="bg-white max-w-lg w-full rounded-2xl shadow-xl p-8 border border-gray-100">
+        
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Evaluación Parte 2: Portafolio Unificado</h1>
+            <p class="text-gray-500 mt-2">Sube tu archivo para normalizar edades, ubicaciones y crear una tabla central.</p>
+        </div>
+
+        <form id="etl-form-2" class="space-y-6">
+            <!-- Arrastrar y Soltar / Subir Archivo -->
+            <div class="w-full">
+                <label for="file-upload-2" class="flex flex-col items-center justify-center w-full h-40 border-2 border-gray-300 border-dashed rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 hover:border-blue-400 transition-all">
+                    <div id="upload-prompt-2" class="flex flex-col items-center justify-center pt-5 pb-6">
+                        <svg class="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                        <p class="mb-2 text-sm text-gray-500"><span class="font-semibold">Haz clic para subir</span> o arrastra tu archivo aquí</p>
+                    </div>
+                    <div id="file-info-2" class="hidden flex-col items-center justify-center text-center">
+                        <svg class="h-10 w-10 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+                           <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                       </svg>
+                       <p id="file-name-2" class="text-gray-700 font-medium mt-2 px-2 text-center"></p>
+                   </div>
+                    <input id="file-upload-2" type="file" class="hidden" accept=".csv,.txt,.zip" required />
+                </label>
+            </div>
+
+            <!-- Separador -->
+            <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
+                <h3 class="font-semibold text-gray-700">Separador del archivo</h3>
+                <select id="separador-2" class="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5">
+                    <option value=",">Coma (,)</option>
+                    <option value=";">Punto y coma (;)</option>
+                    <option value="\t">Tabulador</option>
+                </select>
+            </div>
+
+            <button id="submit-button-2" type="submit" class="w-full flex justify-center items-center text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 font-bold rounded-xl text-lg px-5 py-3.5 text-center transition-all shadow-md disabled:bg-green-400 disabled:cursor-not-allowed">
+                <span id="button-text-2">Unificar y Descargar</span>
+                <svg id="spinner-2" class="animate-spin ml-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </button>
+        </form>
+    </div>
+
+    <script>
+        const form = document.getElementById('etl-form-2');
+        const fileInput = document.getElementById('file-upload-2');
+        const uploadPrompt = document.getElementById('upload-prompt-2');
+        const fileInfo = document.getElementById('file-info-2');
+        const fileNameDisplay = document.getElementById('file-name-2');
+        const submitButton = document.getElementById('submit-button-2');
+        const buttonText = document.getElementById('button-text-2');
+        const spinner = document.getElementById('spinner-2');
+        const separadorInput = document.getElementById('separador-2');
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                fileNameDisplay.textContent = fileInput.files[0].name;
+                uploadPrompt.classList.add('hidden');
+                fileInfo.classList.remove('hidden');
+                fileInfo.classList.add('flex');
+            }
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            if (fileInput.files.length === 0) {
+                alert('Por favor, selecciona un archivo para procesar.');
+                return;
+            }
+
+            submitButton.disabled = true;
+            buttonText.textContent = 'Procesando...';
+            spinner.classList.remove('hidden');
+
+            try {
+                const file = fileInput.files[0];
+                const safeFileName = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9_.-]/g, "_");
+
+                const formData = new FormData();
+                formData.append('file', file, safeFileName);
+                formData.append('separador', separadorInput.value);
+                
+                const response = await fetch('/api/portafolio_universal', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Error: ${response.statusText}. Detalles: ${errorText}`);
+                }
+
+                const blob = await response.blob();
+                let filename = "datos_analizados_unificados.csv";
+                const disposition = response.headers.get('Content-Disposition');
+                if (disposition && disposition.includes('filename=')) {
+                    filename = disposition.split('filename=')[1].replace(/"/g, '');
+                }
+
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+                
+                alert('¡Proceso completado con éxito!');
+            } catch (error) {
+                alert(`Ocurrió un error al procesar el archivo: ${error.message}`);
+            } finally {
+                submitButton.disabled = false;
+                buttonText.textContent = 'Unificar y Descargar';
+                spinner.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

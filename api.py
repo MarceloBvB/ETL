@@ -38,13 +38,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-def servir_frontend():
-    return FileResponse("index.html")
+@app.get("/parte1")
+def servir_parte1():
+    return FileResponse("parte1.html")
 
-@app.get("/portafolios")
-def servir_portafolios():
-    return FileResponse("portafolios.html")
+@app.get("/parte2")
+def servir_parte2():
+    return FileResponse("parte2.html")
 
 @app.post("/api/descargar_log_txt")
 def descargar_log_txt(log_data: dict, background_tasks: BackgroundTasks):
