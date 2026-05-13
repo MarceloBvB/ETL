@@ -5,3 +5,4 @@ uvicorn
 python-multipart
 adbc-driver-postgresql
 fpdf2
+rapidfuzz

@@ -2,11 +2,84 @@ from datetime import datetime
 import unicodedata
 import polars as pl
 import re
-import difflib
+import os
+import logging
+from rapidfuzz import process, fuzz
 import urllib.request
 import urllib.parse
 import json
 from concurrent.futures import ThreadPoolExecutor
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("DataCleaner")
+
+class DataCleaner:
+    """Clase profesional para normalización y enriquecimiento de datos usando RapidFuzz."""
+    
+    def __init__(self, file_path: str):
+        self.master_list = []
+        self.processed_master_list = []
+        self._load_data(file_path)
+
+    def _load_data(self, path: str):
+        try:
+            if path.endswith('.json'):
+                with open(path, 'r', encoding='utf-8') as f:
+                    self.master_list = json.load(f)
+            elif path.endswith('.csv'):
+                with open(path, 'r', encoding='utf-8') as f:
+                    self.master_list = [line.strip() for line in f.readlines() if line.strip()]
+            else:
+                raise ValueError("Formato no soportado. Debe ser .json o .csv")
+            
+            # Pre-procesar la lista maestra una sola vez en memoria para optimizar el rendimiento
+            self.processed_master_list = [self._preprocess(item) for item in self.master_list]
+            logger.info(f"Cargados {len(self.master_list)} valores maestros desde {path}")
+        except Exception as e:
+            logger.error(f"Error crítico al cargar lista maestra desde {path}: {e}")
+            raise
+
+    def _preprocess(self, text: str) -> str:
+        if not isinstance(text, text.__class__):
+            return ""
+        # 1. Normalización Unicode (eliminar acentos y tildes correctamente)
+        text = unicodedata.normalize('NFKD', str(text)).encode('ASCII', 'ignore').decode('utf-8')
+        # 2. Minúsculas
+        text = text.lower()
+        # 3. Eliminar caracteres especiales (mantener letras, números y espacios)
+        text = re.sub(r'[^a-z0-9\s]', '', text)
+        # 4. Manejar espacios múltiples (ej: "cabo d   ehornos" -> "cabo d ehornos")
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+
+    def corregir_dato(self, entrada: str, umbral_similitud: float = 80.0) -> str:
+        if not entrada or not str(entrada).strip():
+            return entrada
+        
+        entrada_limpia = self._preprocess(entrada)
+        if not entrada_limpia:
+            return entrada
+            
+        try:
+            # WRatio maneja excelentemente diferencias de longitud y errores de espacios/tipográficos
+            match = process.extractOne(
+                entrada_limpia, 
+                self.processed_master_list, 
+                scorer=fuzz.WRatio, 
+                score_cutoff=umbral_similitud
+            )
+            
+            if match:
+                mejor_coincidencia, score, indice = match
+                valor_corregido = self.master_list[indice].upper()
+                logger.debug(f"Corregido: '{entrada}' -> '{valor_corregido}' (Score: {score:.2f})")
+                return valor_corregido
+            else:
+                logger.warning(f"Sin coincidencia ({entrada}). Requiere revisión.")
+                return f"{entrada} (Requiere revisión)"
+        except Exception as e:
+            logger.error(f"Fallo al procesar dato '{entrada}': {e}")
+            return f"{entrada} (Error)"
 
 def normalizar_texto(texto):
     """Elimina acentos, maneja nulos/números y convierte el texto a mayúsculas."""
@@ -185,6 +258,15 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
                 mapa_correccion = obtener_correcciones_wikipedia(unicos)
                 if mapa_correccion:
                     df = df.with_columns(pl.col(col).replace(mapa_correccion, default=pl.col(col)).alias(col))
+            mapa_correccion = {}
+            for val in unicos:
+                if len(str(val)) < 3: continue
+                corregido = corregir_dato(val, VALORES_OFICIALES, umbral_similitud=80)
+                if corregido != val:
+                    mapa_correccion[val] = corregido
+                    
+            if mapa_correccion:
+                df = df.with_columns(pl.col(col).replace(mapa_correccion, default=pl.col(col)).alias(col))
 
     # 2. AHORA SÍ eliminamos duplicados (ya que todo está normalizado e igual)
     df = df.unique(maintain_order=True)
