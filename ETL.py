@@ -75,11 +75,11 @@ class DataCleaner:
                 logger.debug(f"Corregido: '{entrada}' -> '{valor_corregido}' (Score: {score:.2f})")
                 return valor_corregido
             else:
-                logger.warning(f"Sin coincidencia ({entrada}). Requiere revisión.")
-                return f"{entrada} (Requiere revisión)"
+                logger.warning(f"Sin coincidencia ({entrada}). Se mantiene el valor original.")
+                return entrada
         except Exception as e:
             logger.error(f"Fallo al procesar dato '{entrada}': {e}")
-            return f"{entrada} (Error)"
+            return entrada
 
 def normalizar_texto(texto):
     """Elimina acentos, maneja nulos/números y convierte el texto a mayúsculas."""
