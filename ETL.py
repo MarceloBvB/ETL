@@ -206,74 +206,60 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
     # --- NUEVO: Inteligencia para separar datos amontonados en 1 sola columna ---
     if len(df.columns) == 1:
         col_name = df.columns[0]
-        # Extraer Fecha (dd-mm-yyyy o dd/mm/yyyy o yyyy-mm-dd)
-        patron_fecha = r"(\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4}|\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2})"
-        # Extraer ID numérico si está al principio de la línea
-        patron_id = r"^(\d+)\s+"
+        # Usamos una expresión regular para separar "ID. Nombre - Fecha" de forma limpia
+        patron = r"^(\d+)\.?\s+(.*?)(?:\s+-\s+(.*))?$"
         
-        df_fechas = df.select(pl.col(col_name).str.extract(patron_fecha, 1).alias("Fecha"))
-        if df_fechas["Fecha"].null_count() < len(df_fechas):
-            # Encontramos fechas mezcladas, separamos todo en columnas explícitas
-            df = df.with_columns([
-                pl.col(col_name).str.extract(patron_id, 1).alias("ID_Detectado"),
-                pl.col(col_name).str.replace(patron_fecha, "").str.replace(patron_id, "").str.strip_chars().alias("Nombre_o_Lugar"),
-                df_fechas["Fecha"].alias("Fecha_Nacimiento")
-            ]).drop(col_name)
+        df_extracted = df.select(
+            pl.col(col_name).str.extract(patron, 1).alias("ID"),
+            pl.col(col_name).str.extract(patron, 2).alias("Nombre"),
+            pl.col(col_name).str.extract(patron, 3).alias("Fecha_Nacimiento")
+        )
+        
+        if df_extracted["Nombre"].null_count() < len(df_extracted):
+            df = df_extracted
+            df = df.with_columns(pl.col("Nombre").str.strip_chars())
             
     # Renombrar columnas genéricas para que el Excel sea entendible
     for col in df.columns:
         if col.startswith("column_"):
             df = df.rename({col: "Dato_Principal"})
     
-    # 1. Limpieza universal de textos (Mayúsculas, sin tildes, ortografía)
-    cols_texto = [col for col, dtype in df.schema.items() if dtype == pl.String]
+    # 1. Limpieza universal de textos (Mayúsculas, sin tildes)
+    cols_texto = [col for col, dtype in df.schema.items() if dtype == pl.String and col != "Fecha_Nacimiento"]
     today = datetime.now().date()
     
     if cols_texto:
-        # Limpiar primero para igualar palabras
         df = df.with_columns([
             limpiar_columna_polars(col).str.replace_all(r"[^A-Z0-9\s\.,:\-/_]", "").str.strip_chars().alias(col)
             for col in cols_texto
         ])
-        
-        # Inicializar la clase profesional con el archivo externo
-        cleaner = None
-        if os.path.exists("maestra_ciudades.json"):
-            cleaner = DataCleaner("maestra_ciudades.json")
-        else:
-            logger.warning("No se encontró el archivo 'maestra_ciudades.json'. Omitiendo corrección de texto.")
-            
-        for col in cols_texto:
-            # Extraemos valores únicos para consultar a la API 1 sola vez por palabra
-            unicos = df.get_column(col).drop_nulls().unique().to_list()
-            mapa_correccion = {}
-            if cleaner:
-                for val in unicos:
-                    if len(str(val)) < 3: continue
-                    corregido = cleaner.corregir_dato(val, umbral_similitud=80.0)
-                    if corregido != val:
-                        mapa_correccion[val] = corregido
-                        
-            if mapa_correccion:
-                df = df.with_columns(pl.col(col).replace(mapa_correccion, default=pl.col(col)).alias(col))
 
     # 2. AHORA SÍ eliminamos duplicados (ya que todo está normalizado e igual)
     df = df.unique(maintain_order=True)
 
     # 3. Asegurar ID si no existe (al final, para que no interfiera al borrar duplicados)
-    has_id = any(c.lower() in ["id", "id_detectado"] for c in df.columns)
+    has_id = any(c.lower() == "id" for c in df.columns)
     if not has_id:
         df = df.with_columns(pl.Series("ID", range(1, len(df) + 1)))
-    id_col = next((c for c in df.columns if c.lower() in ["id", "id_detectado"]), "ID")
+    id_col = next((c for c in df.columns if c.lower() == "id"), "ID")
 
     # 4. Detectar fechas automáticamente en cualquier columna (Lógica Famosos)
     columnas_con_fechas = []
-    for col in cols_texto:
-        muestras = df[col].drop_nulls().head(5).to_list()
-        if any(parse_date_robust(m) is not None for m in muestras):
-            columnas_con_fechas.append(col)
+    if "Fecha_Nacimiento" in df.columns:
+        columnas_con_fechas.append("Fecha_Nacimiento")
+    else:
+        for col in cols_texto:
+            muestras = df[col].drop_nulls().head(5).to_list()
+            if any(parse_date_robust(m) is not None for m in muestras):
+                columnas_con_fechas.append(col)
 
     def extraer_fecha(val):
+        if not val: return val
+        val_str = str(val).upper().strip()
+        if re.search(r"A\.?\s*C\.?", val_str) or re.search(r"^-\d+", val_str):
+            year = re.sub(r"[^\d]", "", val_str)
+            return f"{year} a.C. (Antes de Cristo)"
+            
         dt = parse_date_robust(val)
         if dt:
             if dt.year > today.year: dt = dt.replace(year=dt.year - 100)
@@ -281,6 +267,14 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
         return val
 
     def calcular_edad(val):
+        if not val: return None
+        val_str = str(val).upper().strip()
+        if re.search(r"A\.?\s*C\.?", val_str) or re.search(r"^-\d+", val_str):
+            year = re.sub(r"[^\d]", "", val_str)
+            if year.isdigit():
+                return today.year + int(year) # Ej: 2026 + 300 = 2326 años
+            return None
+            
         dt = parse_date_robust(val)
         if dt:
             if dt.year > today.year: dt = dt.replace(year=dt.year - 100)
@@ -288,6 +282,11 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
         return None
 
     def es_cumple(val):
+        if not val: return False
+        val_str = str(val).upper().strip()
+        if re.search(r"A\.?\s*C\.?", val_str) or re.search(r"^-\d+", val_str):
+            return False # Las fechas A.C. rara vez tienen día y mes exacto
+            
         dt = parse_date_robust(val)
         if dt:
             if dt.year > today.year: dt = dt.replace(year=dt.year - 100)
