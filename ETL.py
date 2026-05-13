@@ -2,6 +2,7 @@ from datetime import datetime
 import unicodedata
 import polars as pl
 import re
+import difflib
 
 def normalizar_texto(texto):
     """Elimina acentos, maneja nulos/números y convierte el texto a mayúsculas."""
@@ -123,23 +124,50 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
     limpia textos, estandariza fechas, calcula edades y divide en tablas si detecta lugares."""
     df = _leer_csv_robusto(file_path, separador)
     
-    # 1. Eliminar duplicados
-    df = df.unique()
-    
-    # 2. Asegurar ID si no existe
-    if "ID" not in df.columns and "id" not in [c.lower() for c in df.columns]:
-        df = df.with_columns(pl.Series("ID", range(1, len(df) + 1)))
-    id_col = next((c for c in df.columns if c.lower() == "id"), "ID")
-    
-    # 3. Limpieza universal de textos (Mayúsculas, sin tildes, quitar caracteres raros)
+    # 1. Limpieza universal de textos (Mayúsculas, sin tildes, ortografía)
     cols_texto = [col for col, dtype in df.schema.items() if dtype == pl.String]
     today = datetime.now().date()
     
+    def obtener_correcciones_dinamicas(df_temp: pl.DataFrame, col_name: str, umbral: float = 0.82):
+        """Auto-detecta errores ortográficos analizando frecuencias y similitud de texto."""
+        # Obtener palabras ordenadas de mayor a menor aparición
+        frecuencias = df_temp.get_column(col_name).drop_nulls().value_counts(sort=True)
+        palabras = frecuencias[col_name].to_list()
+        
+        mapa_auto = {}
+        correctas_conocidas = []
+        
+        for p in palabras:
+            if not p or len(p) < 3: continue # Ignoramos palabras vacías o muy cortas
+            
+            # Si la palabra se parece un 82% a una correcta (más frecuente), la mapeamos como error
+            matches = difflib.get_close_matches(p, correctas_conocidas, n=1, cutoff=umbral)
+            if matches:
+                mapa_auto[p] = matches[0]
+            else:
+                correctas_conocidas.append(p) # Es una palabra nueva/legítima
+        return mapa_auto
+
     if cols_texto:
+        # Limpiar primero para igualar palabras
         df = df.with_columns([
-            limpiar_columna_polars(col).str.replace_all(r"[^A-Z0-9\s\.,:\-/_]", "").alias(col)
+            limpiar_columna_polars(col).str.replace_all(r"[^A-Z0-9\s\.,:\-/_]", "").str.strip_chars().alias(col)
             for col in cols_texto
         ])
+        
+        # Analizar cada columna y autocorregir sin diccionarios duros
+        for col in cols_texto:
+            mapa_correccion = obtener_correcciones_dinamicas(df, col)
+            if mapa_correccion:
+                df = df.with_columns(pl.col(col).replace(mapa_correccion, default=pl.col(col)).alias(col))
+
+    # 2. AHORA SÍ eliminamos duplicados (ya que todo está normalizado e igual)
+    df = df.unique(maintain_order=True)
+
+    # 3. Asegurar ID si no existe (al final, para que no interfiera al borrar duplicados)
+    if "ID" not in df.columns and "id" not in [c.lower() for c in df.columns]:
+        df = df.with_columns(pl.Series("ID", range(1, len(df) + 1)))
+    id_col = next((c for c in df.columns if c.lower() == "id"), "ID")
 
     # 4. Detectar fechas automáticamente en cualquier columna (Lógica Famosos)
     columnas_con_fechas = []
