@@ -3,26 +3,10 @@ import unicodedata
 import polars as pl
 import re
 import difflib
-
-# ===== LISTA MAESTRA (Master Data) =====
-# En lugar de intentar predecir todos los errores humanos, defines los valores correctos.
-# El sistema usará matemáticas para emparejar automáticamente los errores (ej. "ARAUOC") 
-# con el valor oficial que se le parezca ("ARAUCO").
-VALORES_OFICIALES = [
-    "ARAUCO", "LA HIGUERA", "CURICO", "SAN JUAN DE LA COSTA", "COINCO", 
-    "SANTIAGO", "CONSTITUCION", "CABO DE HORNOS", "SAN FERNANDO", "EL TABO", 
-    "CHONCHI", "GRANEROS", "CHOLCHOL", "PERQUENCO", "PIRQUE", "LA CALERA", 
-    "LINARES", "ERCILLA", "COCHAMO", "HUALQUI", "RIO CLARO", "YERBAS BUENAS", 
-    "MARIA PINTO", "LOS ANGELES", "SAN JAVIER", "PADRE HURTADO", "VILLARRICA", 
-    "IQUIQUE", "CHEPICA", "CANELA", "LA CRUZ", "LO BARNECHEA", "CONCON", 
-    "CONCEPCION", "CHILLAN", "PORTEZUELO", "CURACO DE VELEZ", "LONQUIMAY", 
-    "PADRE LAS CASAS", "QUEILEN", "SAN RAFAEL", "RIO BUENO", "EMPEDRADO", 
-    "FUTALEUFU", "LOS VILOS", "CONCHALI", "LAS CABRAS", "PORVENIR", 
-    "SAN PEDRO DE LA PAZ", "ALTO DEL CARMEN", "SANTA CRUZ", "COCHRANE", 
-    "PUERTO OCTAY", "PUCHUNCAVI", "COYHAIQUE", "EL CARMEN", "SANTA BARBARA", 
-    "TALTAL", "PROVIDENCIA", "VICTORIA", "COLCHANE", "NACIMIENTO", "CARAHUE", 
-    "TIRUA", "PUERTO VARAS", "GENERAL LAGOS", "CURACAVI", "LAS CONDES", "SAN PABLO"
-]
+import urllib.request
+import urllib.parse
+import json
+from concurrent.futures import ThreadPoolExecutor
 
 def normalizar_texto(texto):
     """Elimina acentos, maneja nulos/números y convierte el texto a mayúsculas."""
@@ -162,12 +146,22 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
                 if not val or len(val) < 3: return
                 try:
                     query = urllib.parse.quote(val)
-                    url = f"https://es.wikipedia.org/w/api.php?action=opensearch&search={query}&limit=1&format=json"
+                    # Usamos el motor de búsqueda completo con sugerencias ortográficas ("Quizás quisiste decir...")
+                    url = f"https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch={query}&format=json&srinfo=suggestion"
                     req = urllib.request.Request(url, headers={'User-Agent': 'ETL_Pro_Bot/1.0'})
                     with urllib.request.urlopen(req, timeout=3) as response:
                         data = json.loads(response.read().decode())
-                        if len(data) > 1 and len(data[1]) > 0:
-                            sugerencia = str(data[1][0]).upper()
+                        query_data = data.get("query", {})
+                        
+                        sugerencia = None
+                        # 1. Si Wikipedia detecta un error de tipeo y sugiere una corrección
+                        if "searchinfo" in query_data and "suggestion" in query_data["searchinfo"]:
+                            sugerencia = str(query_data["searchinfo"]["suggestion"]).upper()
+                        # 2. Si no hay sugerencia de error, tomamos el mejor resultado oficial que encuentre
+                        elif "search" in query_data and len(query_data["search"]) > 0:
+                            sugerencia = str(query_data["search"][0]["title"]).upper()
+                            
+                        if sugerencia:
                             # Eliminar etiquetas de desambiguación (ej: "ARAUCO (COMUNA)")
                             sugerencia = re.sub(r"\(.*?\)", "", sugerencia).strip()
                             
