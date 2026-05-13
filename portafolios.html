@@ -22,7 +22,7 @@
                 <ul class="text-sm text-purple-600 mt-2 space-y-1 list-disc pl-5">
                     <li>Convertirá todo a mayúsculas, quitando tildes, duplicados y caracteres prohibidos.</li>
                     <li>Detectará <strong>fechas</strong> y automáticamente añadirá Edad y Cumpleaños.</li>
-                    <li>Detectará datos <strong>geográficos</strong> y los dividirá en tablas relacionales.</li>
+                    <li>Detectará datos <strong>geográficos</strong> y, en vez de fragmentarlo, te entregará todo consolidado en un solo Excel ordenado.</li>
                 </ul>
             </div>
 
@@ -40,7 +40,7 @@
                     </select>
                 </div>
                 <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-md mt-4 text-lg">
-                    Analizar y Descargar (ZIP)
+                    Analizar y Descargar (Excel)
                 </button>
             </form>
         </div>
@@ -59,10 +59,21 @@
             try {
                 const res = await fetch('/api/portafolio_universal', { method: 'POST', body: formData });
                 if (!res.ok) throw new Error(await res.text());
+                
+                // Detectar si el backend devolvió CSV o Excel según el tipo de contenido
+                const contentType = res.headers.get('content-type');
+                let extension = 'xlsx';
+                if (contentType && contentType.includes('csv')) {
+                    extension = 'csv';
+                    alert("El archivo es demasiado grande para Excel (> 1 millón de filas). Se ha descargado como CSV.");
+                }
+                
                 const url = window.URL.createObjectURL(await res.blob());
-                const a = document.createElement('a'); a.href = url; a.download = 'datos_analizados.zip'; a.click();
+                const a = document.createElement('a'); a.href = url; 
+                a.download = `datos_analizados_unificados.${extension}`; 
+                a.click();
             } catch (err) { alert('Error: ' + err.message); } 
-            finally { btn.disabled = false; btn.textContent = 'Analizar y Descargar (ZIP)'; }
+            finally { btn.disabled = false; btn.textContent = 'Analizar y Descargar (Excel)'; }
         });
     </script>
 </body>

@@ -186,18 +186,29 @@ def api_portafolio_universal(
             
         tablas = procesar_portafolio_unificado(tmp_path, separador)
         
-        zip_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip", dir=temp_folder)
-        with zipfile.ZipFile(zip_tmp.name, 'w') as zipf:
-            for nombre_tabla, df in tablas.items():
-                background_tasks.add_task(guardar_en_db, df, DB_URI, nombre_tabla)
-                tmp_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder)
-                df.write_csv(tmp_csv.name, separator=",")
-                zipf.write(tmp_csv.name, f"{nombre_tabla}.csv")
-                background_tasks.add_task(os.remove, tmp_csv.name)
-                
+        # Guardar todas las tablas en Neon DB de forma silenciosa
+        for nombre_tabla, df in tablas.items():
+            background_tasks.add_task(guardar_en_db, df, DB_URI, nombre_tabla)
+            
+        # Para la descarga, usar solo la tabla principal que contiene "todo ordenado"
+        df_final = tablas["Tabla_Principal_Normalizada"]
+                 
+        # Si el archivo es demasiado grande para Excel, lo devolvemos como CSV
+        if df_final.height > 1048576:
+            out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder)
+            df_final.write_csv(out_tmp.name, separator=",")
+            media_type = "text/csv"
+            download_filename = "datos_analizados_unificados.csv"
+        else:
+            out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx", dir=temp_folder)
+            df_final.write_excel(out_tmp.name)
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            download_filename = "datos_analizados_unificados.xlsx"
+
         background_tasks.add_task(os.remove, tmp_path)
-        background_tasks.add_task(os.remove, zip_tmp.name)
-        return FileResponse(path=zip_tmp.name, media_type="application/zip", filename="datos_analizados.zip")
+        background_tasks.add_task(os.remove, out_tmp.name)
+        
+        return FileResponse(path=out_tmp.name, media_type=media_type, filename=download_filename)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
