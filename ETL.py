@@ -170,8 +170,14 @@ def limpiar_columna_polars(col_name):
         .str.replace_all(r"[ÓÒÔÖ]", "O")
         .str.replace_all(r"[ÚÙÛÜ]", "U")
         .str.replace_all(r"[Ñ]", "N")
-        .str.replace_all(r"[^A-Z0-9\s\.,:\-/_]", "") # Elimina caracteres especiales como ! @ # $ %
-        .str.strip_chars() # Quita espacios invisibles al inicio y final
+        .str.replace_all(r"_", " ") # Remover guiones bajos siempre
+        .str.replace_all(r"[^A-Z0-9\s\.,:\-/]", "") # Elimina caracteres especiales como ! @ # $ %
+        # --- NUEVO: Remover puntos y guiones sobrantes en textos (Protegiendo Fechas y Coordenadas) ---
+        .str.replace_all(r"([A-Z])\s*[\.\-]+\s*([A-Z])", "${1} ${2}") # Entre letras: SAN - JOSE -> SAN JOSE
+        .str.replace_all(r"([A-Z])\s*[\.\-]+", "${1}") # Después de letra: PERAS. -> PERAS
+        .str.replace_all(r"[\.\-]+\s*([A-Z])", "${1}") # Antes de letra: -MANZANA -> MANZANA
+        .str.replace_all(r"\s+", " ") # Limpia espacios dobles
+        .str.strip_chars() # Quita espacios al inicio y final
     )
 
 def asegurar_utf8(file_path: str):
