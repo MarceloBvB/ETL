@@ -33,14 +33,6 @@
                 </label>
             </div>
 
-            <!-- Opciones extra -->
-            <div class="bg-gray-50 p-4 rounded-lg border space-y-3">
-                <div class="flex items-center space-x-3">
-                    <input id="duplicados" type="checkbox" class="w-5 h-5 text-blue-600 rounded focus:ring-blue-500">
-                    <label for="duplicados" class="text-gray-700 font-medium">Eliminar registros duplicados</label>
-                </div>
-            </div>
-
             <!-- Separador -->
             <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-3">
                 <h3 class="font-semibold text-gray-700">Separador del archivo</h3>
@@ -151,7 +143,6 @@
             downloadLogButton.classList.add('hidden');
             lastLogData = null;
 
-            const duplicados = document.getElementById('duplicados').checked;
             const separador = separadorInput.value;
             const nombreDescargaInput = document.getElementById('nombre_descarga').value.trim();
             
@@ -173,7 +164,7 @@
 
                     const formData = new FormData();
                     formData.append('file', file, safeFileName);
-                    formData.append('eliminar_duplicados', duplicados);
+                    formData.append('eliminar_duplicados', true);
                     formData.append('separador', separador);
                     formData.append('columnas_eliminar', '[]');
                     formData.append('mapa_nombres', '{}');

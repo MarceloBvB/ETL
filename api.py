@@ -8,6 +8,7 @@ import zipfile
 import json
 import textwrap
 from fpdf import FPDF
+import xlsxwriter
 from typing import List
 from ETL import procesar_archivo, guardar_en_db, procesar_portafolio_unificado
 
@@ -74,7 +75,7 @@ def procesar(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     separador: str = Form(","),
-    eliminar_duplicados: bool = Form(False),
+    eliminar_duplicados: bool = Form(True),
     nombre_tabla: str = Form(None),
     columnas_eliminar: str = Form("[]"),
     mapa_nombres: str = Form("{}"),
@@ -125,7 +126,7 @@ def procesar(
         df, log = procesar_archivo(
             file_path=tmp_path,
             separador=separador,
-            eliminar_duplicados=eliminar_duplicados,
+            eliminar_duplicados=True, # Forzado a True según requerimiento
             columnas_a_eliminar=cols_a_eliminar,
             mapa_nombres=mapa_dict,
         )
@@ -195,20 +196,31 @@ def api_portafolio_universal(
         for nombre_tabla, df in tablas.items():
             background_tasks.add_task(guardar_en_db, df, DB_URI, nombre_tabla)
             
-        # Para la descarga, usar solo la tabla principal que contiene "todo ordenado"
+        # Para la descarga, usamos la tabla principal como referencia de tamaño
         df_final = tablas["Tabla_Principal_Normalizada"]
         
         filename_base = nombre_descarga.strip() if nombre_descarga.strip() else "datos_analizados_unificados"
                  
-        # Si el archivo es demasiado grande para Excel, lo devolvemos como CSV
         if df_final.height > 1048576:
-            out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder)
-            df_final.write_csv(out_tmp.name, separator=",")
-            media_type = "text/csv"
-            download_filename = f"{filename_base}.csv"
+            # Si es gigantesco, devolvemos un ZIP con todos los CSVs separados para no perder las tablas extras
+            out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip", dir=temp_folder)
+            with zipfile.ZipFile(out_tmp.name, 'w') as zf:
+                for nombre_tabla, df_tabla in tablas.items():
+                    tmp_csv = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", dir=temp_folder)
+                    df_tabla.write_csv(tmp_csv.name, separator=",")
+                    zf.write(tmp_csv.name, f"{nombre_tabla}.csv")
+                    os.remove(tmp_csv.name)
+            media_type = "application/zip"
+            download_filename = f"{filename_base}.zip"
         else:
             out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx", dir=temp_folder)
-            df_final.write_excel(out_tmp.name)
+            try:
+                with xlsxwriter.Workbook(out_tmp.name) as workbook:
+                    for tab_name, table_df in tablas.items():
+                        table_df.write_excel(workbook=workbook, worksheet=tab_name[:31])
+            except Exception:
+                # Fallback seguro por si falla, exportar solo la principal
+                df_final.write_excel(out_tmp.name)
             media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             download_filename = f"{filename_base}.xlsx"
 
