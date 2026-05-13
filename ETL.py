@@ -212,59 +212,24 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
             for col in cols_texto
         ])
         
-        # --- NUEVA ARQUITECTURA PROFESIONAL: Data Enrichment via Knowledge Graph ---
-        def obtener_correcciones_wikipedia(valores_unicos):
-            correcciones = {}
-            def fetch(val):
-                if not val or len(val) < 3: return
-                try:
-                    query = urllib.parse.quote(val)
-                    # Usamos el motor de búsqueda completo con sugerencias ortográficas ("Quizás quisiste decir...")
-                    url = f"https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch={query}&format=json&srinfo=suggestion"
-                    req = urllib.request.Request(url, headers={'User-Agent': 'ETL_Pro_Bot/1.0'})
-                    with urllib.request.urlopen(req, timeout=3) as response:
-                        data = json.loads(response.read().decode())
-                        query_data = data.get("query", {})
-                        
-                        sugerencia = None
-                        # 1. Si Wikipedia detecta un error de tipeo y sugiere una corrección
-                        if "searchinfo" in query_data and "suggestion" in query_data["searchinfo"]:
-                            sugerencia = str(query_data["searchinfo"]["suggestion"]).upper()
-                        # 2. Si no hay sugerencia de error, tomamos el mejor resultado oficial que encuentre
-                        elif "search" in query_data and len(query_data["search"]) > 0:
-                            sugerencia = str(query_data["search"][0]["title"]).upper()
-                            
-                        if sugerencia:
-                            # Eliminar etiquetas de desambiguación (ej: "ARAUCO (COMUNA)")
-                            sugerencia = re.sub(r"\(.*?\)", "", sugerencia).strip()
-                            
-                            # Aplicar solo si es un error ortográfico (similitud matemática > 70%)
-                            if sugerencia != val:
-                                similitud = difflib.SequenceMatcher(None, val, sugerencia).ratio()
-                                if similitud > 0.70:
-                                    correcciones[val] = sugerencia
-                except Exception:
-                    pass # Tolerancia a fallos: Si no hay red, no crashea
-
-            # Usar hilos paralelos para consultar cientos de palabras a la vez sin trabar el sistema
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                executor.map(fetch, valores_unicos)
-            return correcciones
-
+        # Inicializar la clase profesional con el archivo externo
+        cleaner = None
+        if os.path.exists("maestra_ciudades.json"):
+            cleaner = DataCleaner("maestra_ciudades.json")
+        else:
+            logger.warning("No se encontró el archivo 'maestra_ciudades.json'. Omitiendo corrección de texto.")
+            
         for col in cols_texto:
             # Extraemos valores únicos para consultar a la API 1 sola vez por palabra
             unicos = df.get_column(col).drop_nulls().unique().to_list()
-            if len(unicos) <= 1000: # Límite de seguridad para no saturar APIs
-                mapa_correccion = obtener_correcciones_wikipedia(unicos)
-                if mapa_correccion:
-                    df = df.with_columns(pl.col(col).replace(mapa_correccion, default=pl.col(col)).alias(col))
             mapa_correccion = {}
-            for val in unicos:
-                if len(str(val)) < 3: continue
-                corregido = corregir_dato(val, VALORES_OFICIALES, umbral_similitud=80)
-                if corregido != val:
-                    mapa_correccion[val] = corregido
-                    
+            if cleaner:
+                for val in unicos:
+                    if len(str(val)) < 3: continue
+                    corregido = cleaner.corregir_dato(val, umbral_similitud=80.0)
+                    if corregido != val:
+                        mapa_correccion[val] = corregido
+                        
             if mapa_correccion:
                 df = df.with_columns(pl.col(col).replace(mapa_correccion, default=pl.col(col)).alias(col))
 
