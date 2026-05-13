@@ -4,6 +4,26 @@ import polars as pl
 import re
 import difflib
 
+# ===== LISTA MAESTRA (Master Data) =====
+# En lugar de intentar predecir todos los errores humanos, defines los valores correctos.
+# El sistema usará matemáticas para emparejar automáticamente los errores (ej. "ARAUOC") 
+# con el valor oficial que se le parezca ("ARAUCO").
+VALORES_OFICIALES = [
+    "ARAUCO", "LA HIGUERA", "CURICO", "SAN JUAN DE LA COSTA", "COINCO", 
+    "SANTIAGO", "CONSTITUCION", "CABO DE HORNOS", "SAN FERNANDO", "EL TABO", 
+    "CHONCHI", "GRANEROS", "CHOLCHOL", "PERQUENCO", "PIRQUE", "LA CALERA", 
+    "LINARES", "ERCILLA", "COCHAMO", "HUALQUI", "RIO CLARO", "YERBAS BUENAS", 
+    "MARIA PINTO", "LOS ANGELES", "SAN JAVIER", "PADRE HURTADO", "VILLARRICA", 
+    "IQUIQUE", "CHEPICA", "CANELA", "LA CRUZ", "LO BARNECHEA", "CONCON", 
+    "CONCEPCION", "CHILLAN", "PORTEZUELO", "CURACO DE VELEZ", "LONQUIMAY", 
+    "PADRE LAS CASAS", "QUEILEN", "SAN RAFAEL", "RIO BUENO", "EMPEDRADO", 
+    "FUTALEUFU", "LOS VILOS", "CONCHALI", "LAS CABRAS", "PORVENIR", 
+    "SAN PEDRO DE LA PAZ", "ALTO DEL CARMEN", "SANTA CRUZ", "COCHRANE", 
+    "PUERTO OCTAY", "PUCHUNCAVI", "COYHAIQUE", "EL CARMEN", "SANTA BARBARA", 
+    "TALTAL", "PROVIDENCIA", "VICTORIA", "COLCHANE", "NACIMIENTO", "CARAHUE", 
+    "TIRUA", "PUERTO VARAS", "GENERAL LAGOS", "CURACAVI", "LAS CONDES", "SAN PABLO"
+]
+
 def normalizar_texto(texto):
     """Elimina acentos, maneja nulos/números y convierte el texto a mayúsculas."""
     if texto is None or texto == "":
@@ -128,26 +148,6 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
     cols_texto = [col for col, dtype in df.schema.items() if dtype == pl.String]
     today = datetime.now().date()
     
-    def obtener_correcciones_dinamicas(df_temp: pl.DataFrame, col_name: str, umbral: float = 0.82):
-        """Auto-detecta errores ortográficos analizando frecuencias y similitud de texto."""
-        # Obtener palabras ordenadas de mayor a menor aparición
-        frecuencias = df_temp.get_column(col_name).drop_nulls().value_counts(sort=True)
-        palabras = frecuencias[col_name].to_list()
-        
-        mapa_auto = {}
-        correctas_conocidas = []
-        
-        for p in palabras:
-            if not p or len(p) < 3: continue # Ignoramos palabras vacías o muy cortas
-            
-            # Si la palabra se parece un 82% a una correcta (más frecuente), la mapeamos como error
-            matches = difflib.get_close_matches(p, correctas_conocidas, n=1, cutoff=umbral)
-            if matches:
-                mapa_auto[p] = matches[0]
-            else:
-                correctas_conocidas.append(p) # Es una palabra nueva/legítima
-        return mapa_auto
-
     if cols_texto:
         # Limpiar primero para igualar palabras
         df = df.with_columns([
@@ -155,11 +155,42 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
             for col in cols_texto
         ])
         
-        # Analizar cada columna y autocorregir sin diccionarios duros
+        # --- NUEVA ARQUITECTURA PROFESIONAL: Data Enrichment via Knowledge Graph ---
+        def obtener_correcciones_wikipedia(valores_unicos):
+            correcciones = {}
+            def fetch(val):
+                if not val or len(val) < 3: return
+                try:
+                    query = urllib.parse.quote(val)
+                    url = f"https://es.wikipedia.org/w/api.php?action=opensearch&search={query}&limit=1&format=json"
+                    req = urllib.request.Request(url, headers={'User-Agent': 'ETL_Pro_Bot/1.0'})
+                    with urllib.request.urlopen(req, timeout=3) as response:
+                        data = json.loads(response.read().decode())
+                        if len(data) > 1 and len(data[1]) > 0:
+                            sugerencia = str(data[1][0]).upper()
+                            # Eliminar etiquetas de desambiguación (ej: "ARAUCO (COMUNA)")
+                            sugerencia = re.sub(r"\(.*?\)", "", sugerencia).strip()
+                            
+                            # Aplicar solo si es un error ortográfico (similitud matemática > 70%)
+                            if sugerencia != val:
+                                similitud = difflib.SequenceMatcher(None, val, sugerencia).ratio()
+                                if similitud > 0.70:
+                                    correcciones[val] = sugerencia
+                except Exception:
+                    pass # Tolerancia a fallos: Si no hay red, no crashea
+
+            # Usar hilos paralelos para consultar cientos de palabras a la vez sin trabar el sistema
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                executor.map(fetch, valores_unicos)
+            return correcciones
+
         for col in cols_texto:
-            mapa_correccion = obtener_correcciones_dinamicas(df, col)
-            if mapa_correccion:
-                df = df.with_columns(pl.col(col).replace(mapa_correccion, default=pl.col(col)).alias(col))
+            # Extraemos valores únicos para consultar a la API 1 sola vez por palabra
+            unicos = df.get_column(col).drop_nulls().unique().to_list()
+            if len(unicos) <= 1000: # Límite de seguridad para no saturar APIs
+                mapa_correccion = obtener_correcciones_wikipedia(unicos)
+                if mapa_correccion:
+                    df = df.with_columns(pl.col(col).replace(mapa_correccion, default=pl.col(col)).alias(col))
 
     # 2. AHORA SÍ eliminamos duplicados (ya que todo está normalizado e igual)
     df = df.unique(maintain_order=True)
@@ -229,6 +260,10 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
         tablas["Direcciones"] = df_direcciones
         
     # Siempre devolvemos la tabla unificada por si acaso
+    # Eliminamos el ID de la tabla principal para que no aparezca en el Excel descargado
+    if id_col in df.columns:
+        df = df.drop(id_col)
+        
     tablas["Tabla_Principal_Normalizada"] = df
     
     return tablas
