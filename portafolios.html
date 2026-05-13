@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portafolios ETL 2 y 3</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto space-y-8">
+        <div class="text-center">
+            <h1 class="text-3xl font-bold text-gray-800">Desafíos de Portafolio 2 y 3</h1>
+            <p class="text-gray-500 mt-2">Normalización de Datos: Famosos y Lugares</p>
+            <div class="mt-4">
+                <a href="/" class="text-blue-600 hover:underline font-semibold">&larr; Volver al Limpiador Principal</a>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Portafolio 2 -->
+            <div class="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Portafolio 2: Famosos</h2>
+                <ul class="text-sm text-gray-600 mb-6 space-y-1 list-disc pl-5">
+                    <li>Unificar fechas formato chileno (DD-MM-YYYY)</li>
+                    <li>Quitar separadores no permitidos en nombres</li>
+                    <li>Eliminar registros duplicados</li>
+                    <li>Atributos de Edad y Flag de Cumpleaños</li>
+                </ul>
+                <form id="form-p2" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Subir Archivo (DATOS2026-2.TXT)</label>
+                        <input type="file" id="file-p2" required class="w-full text-sm border border-gray-300 rounded-lg p-2 bg-gray-50 focus:ring-blue-500 outline-none" accept=".txt,.csv">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Separador</label>
+                        <select id="sep-p2" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2 text-sm focus:ring-blue-500 outline-none">
+                            <option value=",">Coma (,)</option>
+                            <option value=";">Punto y coma (;)</option>
+                            <option value="\t">Tabulador</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl transition-all shadow-md mt-4">
+                        Procesar y Descargar CSV
+                    </button>
+                </form>
+            </div>
+
+            <!-- Portafolio 3 -->
+            <div class="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">Portafolio 3: Lugares</h2>
+                <ul class="text-sm text-gray-600 mb-6 space-y-1 list-disc pl-5">
+                    <li>Eliminar registros duplicados</li>
+                    <li>Separar información en 3 tablas relacionadas</li>
+                    <li>Generar tabla Lugares, Georeferencias y Direcciones</li>
+                    <li>Empaqueta todo automáticamente en un archivo ZIP</li>
+                </ul>
+                <form id="form-p3" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Subir Archivo (DATOS3.TXT)</label>
+                        <input type="file" id="file-p3" required class="w-full text-sm border border-gray-300 rounded-lg p-2 bg-gray-50 focus:ring-green-500 outline-none" accept=".txt,.csv">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Separador</label>
+                        <select id="sep-p3" class="w-full bg-gray-50 border border-gray-300 rounded-lg p-2 text-sm focus:ring-green-500 outline-none">
+                            <option value=",">Coma (,)</option>
+                            <option value=";">Punto y coma (;)</option>
+                            <option value="\t">Tabulador</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 px-4 rounded-xl transition-all shadow-md mt-4">
+                        Procesar y Descargar Tablas (ZIP)
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Envío Portafolio 2
+        document.getElementById('form-p2').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button');
+            btn.disabled = true; btn.textContent = 'Procesando Famosos...';
+            
+            const formData = new FormData();
+            formData.append('file', document.getElementById('file-p2').files[0]);
+            formData.append('separador', document.getElementById('sep-p2').value);
+            
+            try {
+                const res = await fetch('/api/portafolio2', { method: 'POST', body: formData });
+                if (!res.ok) throw new Error(await res.text());
+                const url = window.URL.createObjectURL(await res.blob());
+                const a = document.createElement('a'); a.href = url; a.download = 'famosos_limpio.csv'; a.click();
+            } catch (err) { alert('Error: ' + err.message); } 
+            finally { btn.disabled = false; btn.textContent = 'Procesar y Descargar CSV'; }
+        });
+
+        // Envío Portafolio 3
+        document.getElementById('form-p3').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = e.target.querySelector('button');
+            btn.disabled = true; btn.textContent = 'Procesando Lugares...';
+            
+            const formData = new FormData();
+            formData.append('file', document.getElementById('file-p3').files[0]);
+            formData.append('separador', document.getElementById('sep-p3').value);
+            
+            try {
+                const res = await fetch('/api/portafolio3', { method: 'POST', body: formData });
+                if (!res.ok) throw new Error(await res.text());
+                const url = window.URL.createObjectURL(await res.blob());
+                const a = document.createElement('a'); a.href = url; a.download = 'lugares_normalizados.zip'; a.click();
+            } catch (err) { alert('Error: ' + err.message); } 
+            finally { btn.disabled = false; btn.textContent = 'Procesar y Descargar Tablas (ZIP)'; }
+        });
+    </script>
+</body>
+</html>
