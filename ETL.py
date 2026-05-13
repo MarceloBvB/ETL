@@ -179,7 +179,9 @@ def _leer_csv_robusto(file_path: str, separador: str) -> pl.DataFrame:
             df_alt = pl.read_csv(file_path, separator=alt_sep, infer_schema_length=10000, truncate_ragged_lines=True)
             if len(df_alt.columns) >= 2: return df_alt
         except Exception: pass
-    return pl.read_csv(file_path, separator=separador, infer_schema_length=10000, truncate_ragged_lines=True)
+        
+    # Si todo falla y queda 1 sola columna, la leemos SIN cabecera para no perder el primer registro
+    return pl.read_csv(file_path, separator=separador, has_header=False, infer_schema_length=10000, truncate_ragged_lines=True)
 
 def parse_date_robust(date_str):
     """Intenta parsear una fecha de distintos formatos posibles de forma robusta."""
@@ -200,6 +202,28 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
     """Unifica la lógica de los portafolios 2 y 3: procesa cualquier archivo, 
     limpia textos, estandariza fechas, calcula edades y divide en tablas si detecta lugares."""
     df = _leer_csv_robusto(file_path, separador)
+    
+    # --- NUEVO: Inteligencia para separar datos amontonados en 1 sola columna ---
+    if len(df.columns) == 1:
+        col_name = df.columns[0]
+        # Extraer Fecha (dd-mm-yyyy o dd/mm/yyyy o yyyy-mm-dd)
+        patron_fecha = r"(\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2,4}|\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2})"
+        # Extraer ID numérico si está al principio de la línea
+        patron_id = r"^(\d+)\s+"
+        
+        df_fechas = df.select(pl.col(col_name).str.extract(patron_fecha, 1).alias("Fecha"))
+        if df_fechas["Fecha"].null_count() < len(df_fechas):
+            # Encontramos fechas mezcladas, separamos todo en columnas explícitas
+            df = df.with_columns([
+                pl.col(col_name).str.extract(patron_id, 1).alias("ID_Detectado"),
+                pl.col(col_name).str.replace(patron_fecha, "").str.replace(patron_id, "").str.strip_chars().alias("Nombre_o_Lugar"),
+                df_fechas["Fecha"].alias("Fecha_Nacimiento")
+            ]).drop(col_name)
+            
+    # Renombrar columnas genéricas para que el Excel sea entendible
+    for col in df.columns:
+        if col.startswith("column_"):
+            df = df.rename({col: "Dato_Principal"})
     
     # 1. Limpieza universal de textos (Mayúsculas, sin tildes, ortografía)
     cols_texto = [col for col, dtype in df.schema.items() if dtype == pl.String]
@@ -237,9 +261,10 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
     df = df.unique(maintain_order=True)
 
     # 3. Asegurar ID si no existe (al final, para que no interfiera al borrar duplicados)
-    if "ID" not in df.columns and "id" not in [c.lower() for c in df.columns]:
+    has_id = any(c.lower() in ["id", "id_detectado"] for c in df.columns)
+    if not has_id:
         df = df.with_columns(pl.Series("ID", range(1, len(df) + 1)))
-    id_col = next((c for c in df.columns if c.lower() == "id"), "ID")
+    id_col = next((c for c in df.columns if c.lower() in ["id", "id_detectado"]), "ID")
 
     # 4. Detectar fechas automáticamente en cualquier columna (Lógica Famosos)
     columnas_con_fechas = []
@@ -301,10 +326,6 @@ def procesar_portafolio_unificado(file_path: str, separador: str = ","):
         tablas["Direcciones"] = df_direcciones
         
     # Siempre devolvemos la tabla unificada por si acaso
-    # Eliminamos el ID de la tabla principal para que no aparezca en el Excel descargado
-    if id_col in df.columns:
-        df = df.drop(id_col)
-        
     tablas["Tabla_Principal_Normalizada"] = df
     
     return tablas
