@@ -32,6 +32,9 @@ def procesar_archivo(file_path: str, separador: str = ",", eliminar_duplicados: 
     """
     Función central para procesar los datos, independiente de la interfaz.
     """
+    if separador == "\\t":
+        separador = "\t"
+        
     # Cambiamos read_csv por scan_csv para activar el modo perezoso (Lazy Loading)
     # Esto evita cargar todo el archivo en la memoria RAM de golpe.
     lf = pl.scan_csv(file_path, separator=separador, infer_schema_length=10000, truncate_ragged_lines=True)
@@ -80,6 +83,26 @@ def guardar_en_db(df: pl.DataFrame, db_uri: str, nombre_tabla: str):
     except Exception as e:
         print(f"❌ [Segundo Plano] Error al exportar a la base de datos: {e}")
 
+def _leer_csv_robusto(file_path: str, separador: str) -> pl.DataFrame:
+    """Intenta leer el CSV con el separador indicado; si falla, auto-detecta \t o ;."""
+    if separador == "\\t":
+        separador = "\t"
+        
+    try:
+        df = pl.read_csv(file_path, separator=separador, infer_schema_length=10000, truncate_ragged_lines=True)
+        if len(df.columns) >= 2:
+            return df
+    except Exception:
+        pass
+        
+    # Fallback automático: Si falla o da solo 1 columna, intentamos con otros
+    for alt_sep in ["\t", ";", ",", "|"]:
+        try:
+            df_alt = pl.read_csv(file_path, separator=alt_sep, infer_schema_length=10000, truncate_ragged_lines=True)
+            if len(df_alt.columns) >= 2: return df_alt
+        except Exception: pass
+    return pl.read_csv(file_path, separator=separador, infer_schema_length=10000, truncate_ragged_lines=True)
+
 def parse_date_robust(date_str):
     """Intenta parsear una fecha de distintos formatos posibles de forma robusta."""
     if not date_str or str(date_str).strip() == "":
@@ -98,7 +121,7 @@ def parse_date_robust(date_str):
 def procesar_portafolio_2(file_path: str, separador: str = ","):
     """Procesa el portafolio 2: Famosos y Cumpleaños."""
     # 1. Cargar y eliminar registros duplicados
-    df = pl.read_csv(file_path, separator=separador, infer_schema_length=10000, truncate_ragged_lines=True)
+    df = _leer_csv_robusto(file_path, separador)
     df = df.unique()
     
     cols = df.columns
@@ -150,7 +173,7 @@ def procesar_portafolio_2(file_path: str, separador: str = ","):
 def procesar_portafolio_3(file_path: str, separador: str = ","):
     """Procesa el portafolio 3: Lugares, Georeferencias y Direcciones."""
     # 1. Eliminar duplicados
-    df = pl.read_csv(file_path, separator=separador, infer_schema_length=10000, truncate_ragged_lines=True)
+    df = _leer_csv_robusto(file_path, separador)
     df = df.unique()
     
     # Asegurar que exista un ID para relacionar las tablas
